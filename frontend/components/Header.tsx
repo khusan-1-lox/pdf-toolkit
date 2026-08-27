@@ -19,8 +19,8 @@ export function Header() {
             </svg>
           </div>
           <div className="leading-none">
-            <div className="text-[17px] font-semibold tracking-[-0.02em]">PDF Toolkit</div>
-            <div className="text-[11px] font-medium tracking-[0.08em] text-[#6b6a63]">TEAM EDITION · PRIVATE</div>
+            <div className="flex items-center gap-2 text-[17px] font-semibold tracking-[-0.02em]">PDF Toolkit <span className="rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-bold tracking-[0.08em] text-black">BETA</span></div>
+            <div className="text-[11px] font-medium tracking-[0.08em] text-[#6b6a63]">PRIVATE · 25 TOOLS · MCP</div>
           </div>
         </Link>
         <nav className="flex items-center gap-3 text-sm">

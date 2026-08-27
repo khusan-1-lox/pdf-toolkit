@@ -1,0 +1,26 @@
+{
+  "name": "pdf-toolkit-desktop",
+  "version": "1.0.0-beta.1",
+  "description": "PDF Toolkit Desktop - 25 tools offline (BETA)",
+  "main": "main.js",
+  "author": "LOX",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "com.loxx.pdftoolkit",
+    "productName": "PDF Toolkit BETA",
+    "win": { "target": "nsis", "icon": "icon.ico" },
+    "nsis": { "oneClick": true, "perMachine": false },
+    "extraResources": [
+      { "from": "../pdf-toolkit/backend", "to": "backend" },
+      { "from": "../pdf-toolkit/frontend", "to": "frontend" }
+    ]
+  },
+  "devDependencies": {
+    "electron": "^44.0.0",
+    "electron-builder": "^25.1.8"
+  }
+}

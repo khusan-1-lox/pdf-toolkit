@@ -4,8 +4,8 @@ import Providers from "../components/Providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "PDF Toolkit — Team Edition",
-  description: "Internal PDF toolkit for team - Merge, Split, Delete, Compress, PDF to JPG, JPG to PDF, Rotate. Auto-deletes after 5 min.",
+  title: "PDF Toolkit — BETA",
+  description: "PDF Toolkit BETA — 25 tools, private, free MCP. Auto-deletes after 5 min.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

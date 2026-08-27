@@ -78,8 +78,9 @@ export default function Dashboard() {
   return (
     <div className="space-y-8">
       <div className="text-center">
+        <div className="mx-auto inline-flex items-center gap-2 rounded-full bg-amber-400 px-3 py-1 text-xs font-bold tracking-[0.08em]">BETA · ТЕСТ С ДРУЗЬЯМИ</div>
         <h1 className="font-[Newsreader] text-[32px] sm:text-[42px] font-[500] tracking-[-0.03em] leading-[0.95] text-[#1b1a17]">PDF Toolkit — 25 инструментов на вашем VPS</h1>
-        <p className="mx-auto mt-3 max-w-[760px] text-[14px] leading-6 text-[#6b6a63]">Все файлы остаются на вашем сервере · Автоудаление через 5 мин</p>
+        <p className="mx-auto mt-3 max-w-[760px] text-[14px] leading-6 text-[#6b6a63]">Все файлы остаются на вашем сервере · Автоудаление через 5 мин · BETA</p>
       </div>
       <div className="flex flex-wrap justify-center gap-2">
         {categories.map((cat) => (
