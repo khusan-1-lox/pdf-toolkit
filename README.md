@@ -86,10 +86,3 @@ pdf-toolkit/
 - Telegram token now via `{env:TELEGRAM_BOT_TOKEN}` in `opencode.jsonc:42`
 - If a token leaked, rotate via @BotFather `/revoke` immediately
 
-## Monetization (next)
-
-Free MCP stays MIT. Hosted `https://your-domain.com/mcp` (Streamable HTTP + API key $5/mo) after traction — local stays free.
-
-## License
-
-MIT
