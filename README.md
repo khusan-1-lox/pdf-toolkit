@@ -1,44 +1,66 @@
-# PDF Toolkit — 25 tools + Free MCP Server
+<p align="center">
+  <img src="https://img.shields.io/badge/PDF_Toolkit-BETA-amber?style=for-the-badge&labelColor=black" alt="BETA"/>
+</p>
 
-Privacy-first PDF toolkit. All files stay local, auto-delete in 5 min. Self-host on 2GB VPS or use as local MCP for AI agents.
+<h1 align="center">PDF Toolkit</h1>
+<p align="center"><b>25 инструментов · Локально · Приватно · Бесплатный MCP для AI-агентов</b></p>
 
-[![MCP](https://img.shields.io/badge/MCP-1.29-blue)](mcp/) [![Python](https://img.shields.io/badge/python-3.12-blue)](backend/) [![Next.js](https://img.shields.io/badge/Next.js-14-black)](frontend/) [![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+<p align="center">
+  <a href="https://github.com/khusan-1-lox/pdf-toolkit/releases/tag/v1.0.0-beta.1"><img src="https://img.shields.io/github/v/release/khusan-1-lox/pdf-toolkit?label=beta&color=amber" alt="beta"/></a>
+  <a href="mcp/"><img src="https://img.shields.io/badge/MCP-1.29-blue?logo=anthropic" alt="MCP"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT"/></a>
+  <img src="https://img.shields.io/badge/Next.js-14-black?logo=next.js" alt="Next.js"/>
+  <img src="https://img.shields.io/badge/FastAPI-0.110-009688?logo=fastapi" alt="FastAPI"/>
+</p>
 
-## Why
+<p align="center">
+  <img src="mcp/banner.png" alt="PDF Toolkit banner" width="860" onerror="this.style.display='none'"/>
+</p>
 
-- **iLovePDF clone, private**: no cloud upload, no training on your files
-- **MCP for agents**: give Claude/Cursor 17 PDF tools via stdio (no API key)
-- **Heavy local**: LibreOffice on-demand, PyMuPDF, pypdf — no paid APIs
+<p align="center">
+  <b>Merge · Split · Compress · Convert · OCR · Protect</b> — всё на вашем сервере. Файлы удаляются через 5 минут. Никакого облака.
+</p>
 
-## Tools (25)
+---
 
-| Category | Tools |
+### ✨ Что внутри
+
+| | Инструменты |
 |---|---|
-| **Organize** | merge, split, delete, rotate, crop, compare, organize-pdf |
-| **Optimize** | compress (low/medium/high) |
-| **Convert** | pdf→jpg, jpg→pdf, word↔pdf, excel↔pdf, ppt↔pdf, pdf→excel, pdf→ppt, html→pdf, pdf/a |
-| **Edit** | watermark, page-numbers, sign, redact, ocr (rus+eng), repair |
-| **Security** | protect (128-bit), unlock |
+| **📂 Организовать** | Объединить, Разделить, Удалить страницы, Поворот, Обрезка, Сравнение, Сортировка |
+| **⚡ Оптимизировать** | Сжать PDF (low / medium / high) |
+| **🔄 Конвертировать** | PDF ↔ JPG, Word ↔ PDF, Excel ↔ PDF, PowerPoint ↔ PDF, PDF → Excel/PPT, HTML → PDF, PDF/A |
+| **✏️ Редактировать** | Водяной знак, Нумерация, Подпись, Скрытие, OCR (рус+англ), Починка |
+| **🔒 Безопасность** | Защита паролем (128-bit), Снятие пароля |
 
-MCP exposes 17 most-used tools (see `mcp/server.py:607`). All return `output_file` path.
+> **BETA** — тестируем с друзьями. Скачайте установщик в [Releases](https://github.com/khusan-1-lox/pdf-toolkit/releases).
 
-## Quick Start — Web
+---
 
-```bash
-docker compose up --build
-# web: http://localhost:3000  api: http://localhost:8000
-```
+### 🖥️ Софт
 
-Limits: 50 MB/file, 2–10 files for merge, 5 min retention (`TMP_ROOT` + `RETENTION_SECONDS`).
+**Web** — `docker compose up --build` → http://localhost:3000  
+**Desktop** — `PDF Toolkit BETA` (Electron, Windows) — офлайн, 25 инструментов без браузера. Скачать: [Release v1.0.0-beta.1](https://github.com/khusan-1-lox/pdf-toolkit/releases/tag/v1.0.0-beta.1)
 
-## Quick Start — MCP (free, local, no billing)
+<p align="center">
+  <img src="docs/screenshot-dashboard.png" alt="dashboard" width="860" onerror="this.style.display='none'"/>
+</p>
+
+---
+
+### 🤖 MCP — дайте AI-агенту PDF-суперсилы
+
+Бесплатно, локально, без API-ключа. Агент сам вызывает тулы.
+
+**Шаг 1 — Установка**
 
 ```bash
 pip install mcp==1.29.1 pydantic pypdf PyMuPDF Pillow python-docx openpyxl python-pptx pdf2docx pdfplumber
-python mcp/server.py  # stdio, waits for MCP client
 ```
 
-Claude Desktop `claude_desktop_config.json`:
+**Шаг 2 — Подключение**
+
+Claude Desktop (`%APPDATA%\Claude\claude_desktop_config.json`):
 
 ```json
 {
@@ -51,38 +73,49 @@ Claude Desktop `claude_desktop_config.json`:
 }
 ```
 
-Test with Inspector:
+Cursor / OpenCode / VS Code + Cline — тот же `mcp.json`.
 
-```bash
-npx @modelcontextprotocol/inspector python mcp/server.py
+**Шаг 3 — Промпты**
+
+```
+Склей /tmp/a.pdf и /tmp/b.pdf через pdf_merge
+Сожми /tmp/big.pdf с качеством low через pdf_compress
+Сделай из /tmp/scan.pdf searchable PDF с русским языком через ocr_pdf
 ```
 
-Tools: `pdf_merge`, `pdf_split`, `pdf_compress`, `pdf_rotate`, `pdf_delete_pages`, `pdf_watermark`, `pdf_to_jpg`, `jpg_to_pdf`, `word_to_pdf`, `pdf_to_word`, `pdf_to_excel`, `pdf_to_ppt`, `excel_to_pdf`, `ppt_to_pdf`, `ocr_pdf`, `pdf_protect`, `pdf_unlock`
+<details>
+<summary>Все 17 MCP-тулов</summary>
 
-Prompt example: `Склей /tmp/a.pdf и /tmp/b.pdf через pdf_merge`
+`pdf_merge` · `pdf_split` · `pdf_compress` · `pdf_rotate` · `pdf_delete_pages` · `pdf_watermark` · `pdf_to_jpg` · `jpg_to_pdf` · `word_to_pdf` · `pdf_to_word` · `pdf_to_excel` · `pdf_to_ppt` · `excel_to_pdf` · `ppt_to_pdf` · `ocr_pdf` · `pdf_protect` · `pdf_unlock`
 
-Docker for MCP (with LibreOffice):
+</details>
+
+Проверка: `npx @modelcontextprotocol/inspector python mcp/server.py` · Docker: `docker build -f mcp/Dockerfile -t pdf-toolkit-mcp .`
+
+<p align="center">
+  <img src="docs/screenshot-mcp.png" alt="MCP inspector" width="860" onerror="this.style.display='none'"/>
+</p>
+
+---
+
+### 🚀 Быстрый старт
 
 ```bash
-docker build -f mcp/Dockerfile -t pdf-toolkit-mcp .
+git clone https://github.com/khusan-1-lox/pdf-toolkit
+cd pdf-toolkit
+docker compose up --build
 ```
 
-Smithery 1-click: add `mcp/smithery.yaml` (stdio).
-
-## Project Structure
+### 📁 Структура
 
 ```
 pdf-toolkit/
-  backend/   # FastAPI + 26 routers (app/main.py:145)
-  frontend/  # Next.js 14 (app/page.tsx:104)
-  mcp/       # FastMCP server (server.py, pyproject.toml, Dockerfile)
-  docker-compose.yml
-  nginx.conf
+  backend/   # FastAPI, 26 роутов
+  frontend/  # Next.js 14
+  mcp/       # MCP сервер (stdio)
+  desktop-electron/ # Electron BETA
 ```
 
-## Security
+### 📜 Лицензия
 
-- No secrets in git: `.env*` ignored (`.env.example` kept as template), `frontend/.env.local` removed from history
-- Telegram token now via `{env:TELEGRAM_BOT_TOKEN}` in `opencode.jsonc:42`
-- If a token leaked, rotate via @BotFather `/revoke` immediately
-
+MIT — делай что хочешь, приватность по умолчанию.
