@@ -1,6 +1,7 @@
 "use client";
-import Link from "next/link";
 import { useState } from "react";
+import { useTranslations } from "next-intl";
+import { Link } from "@/navigation";
 
 type Tool = { slug: string; title: string; desc: string; meta: string; span: string; cat: string; icon: string };
 type Category = { id: string; label: string; title: string; subtitle: string };
@@ -34,53 +35,54 @@ const catColors: Record<string,{bg:string,fg:string}> = {
 };
 function Icon({name, cat}:{name:string, cat:string}){ const raw = iconSvgs[name] || ""; const col = catColors[cat]?.fg || "#e65a2a"; const bg = catColors[cat]?.bg || "bg-[#fef0eb]"; const html = raw.replaceAll("#e65a2a", col); return <span className={`flex h-11 w-11 items-center justify-center rounded-xl ${bg} [&_svg]:h-5 [&_svg]:w-5`} style={{color: col}} dangerouslySetInnerHTML={{__html: html}} />; }
 
-const categories: Category[] = [
-  { id: "all", label: "Все", title: "Все инструменты", subtitle: "25 инструментов — на вашем VPS" },
-  { id: "organize", label: "Организовать PDF", title: "Организовать PDF", subtitle: "Объединяйте, делите, вращайте и упорядочивайте" },
-  { id: "optimize", label: "Оптимизация PDF", title: "Оптимизация PDF", subtitle: "Уменьшите размер без потери качества" },
-  { id: "convert", label: "Конвертировать PDF", title: "Конвертировать PDF", subtitle: "PDF ↔ JPG и обратно" },
-  { id: "edit", label: "Редактировать PDF", title: "Редактировать PDF", subtitle: "Водяной знак, номера, подпись, скрытие" },
-  { id: "security", label: "Безопасность PDF", title: "Безопасность PDF", subtitle: "Шифруйте и снимайте пароли" },
-];
-
-const tools: Tool[] = [
-  { slug: "merge", title: "Объединить PDF", desc: "Объединяйте PDF файлы и упорядочите их легко и быстро в любом порядке, который вам нравится.", meta: "→ 2–10 файлов", span: "sm:col-span-6", cat: "organize", icon: "merge" },
-  { slug: "split", title: "Разделить PDF", desc: "Выбирайте диапазон страниц, одну страницу или преобразовывайте каждую страницу документа в независимый PDF-файл.", meta: "→ 1,3-5", span: "sm:col-span-6", cat: "organize", icon: "split" },
-  { slug: "delete", title: "Удалить страницы", desc: "Удалите ненужные страницы — оставьте только нужное.", meta: "→ 2, 4", span: "sm:col-span-6", cat: "organize", icon: "delete" },
-  { slug: "rotate", title: "Повернуть PDF", desc: "Вращайте несколько PDF одновременно — 90°/180°/270°", meta: "→ multi", span: "sm:col-span-6", cat: "organize", icon: "rotate" },
-  { slug: "crop", title: "Обрезка PDF", desc: "Обрезайте поля или область — примените к одной или всем страницам.", meta: "→ mm/pt", span: "sm:col-span-6", cat: "organize", icon: "crop" },
-  { slug: "compare", title: "Сравнение PDF", desc: "Сравните два PDF постранично — превью бок о бок с подсветкой.", meta: "→ diff", span: "sm:col-span-6", cat: "organize", icon: "compare" },
-  { slug: "organize-pdf", title: "Организовать PDF", desc: "Сортируйте страницы, как вам угодно. Удаляйте или добавляйте страницы по своему усмотрению.", meta: "→ drag & drop", span: "sm:col-span-6", cat: "organize", icon: "organize-pdf" },
-  { slug: "compress", title: "Сжать PDF", desc: "Уменьшите размер PDF без потери читаемости — для сканов и экспорта.", meta: "→ low/medium", span: "sm:col-span-12", cat: "optimize", icon: "compress" },
-  { slug: "pdf-to-jpg", title: "PDF → JPG", desc: "Рендер каждой страницы в JPG ZIP — 150 dpi.", meta: "→ zip", span: "sm:col-span-6", cat: "convert", icon: "pdf-to-jpg" },
-  { slug: "jpg-to-pdf", title: "JPG → PDF", desc: "Картинки → пагинированный PDF.", meta: "→ JPG/PNG", span: "sm:col-span-6", cat: "convert", icon: "jpg-to-pdf" },
-  { slug: "watermark", title: "Водяной знак", desc: "Текст или PNG на каждую страницу — позиция и прозрачность.", meta: "→ 0.1-1.0", span: "sm:col-span-6", cat: "edit", icon: "watermark" },
-  { slug: "page-numbers", title: "Номера страниц", desc: "1 / N, Page 1 of N — положение и шрифт.", meta: "→ 6–72 pt", span: "sm:col-span-6", cat: "edit", icon: "page-numbers" },
-  { slug: "sign", title: "Подписать PDF", desc: "Картинка подписи — позиция и прозрачность.", meta: "→ PNG/JPG", span: "sm:col-span-6", cat: "edit", icon: "sign" },
-  { slug: "redact", title: "Скрыть данные", desc: "Безвозвратно закрасьте текст и изображения.", meta: "→ фразы", span: "sm:col-span-6", cat: "edit", icon: "redact" },
-  { slug: "protect", title: "Защита PDF", desc: "Пароль 128-bit — печать/копирование.", meta: "→ encrypt", span: "sm:col-span-6", cat: "security", icon: "protect" },
-  { slug: "unlock", title: "Открыть PDF", desc: "Снимите пароль если знаете его.", meta: "→ decrypt", span: "sm:col-span-6", cat: "security", icon: "unlock" },
-  { slug: "word-to-pdf", title: "Word → PDF", desc: "DOCX/DOC → PDF через LibreOffice, сохраняя форматирование.", meta: "→ docx/doc", span: "sm:col-span-6", cat: "convert", icon: "jpg-to-pdf" },
-  { slug: "excel-to-pdf", title: "Excel → PDF", desc: "Таблицы XLSX/XLS → PDF, каждый лист — страница.", meta: "→ xlsx/xls", span: "sm:col-span-6", cat: "convert", icon: "jpg-to-pdf" },
-  { slug: "ppt-to-pdf", title: "PowerPoint → PDF", desc: "Презентации PPTX/PPT → PDF.", meta: "→ pptx/ppt", span: "sm:col-span-6", cat: "convert", icon: "jpg-to-pdf" },
-  { slug: "pdf-to-word", title: "PDF → Word", desc: "Извлечь текст и картинки в редактируемый DOCX.", meta: "→ docx", span: "sm:col-span-6", cat: "convert", icon: "pdf-to-jpg" },
-  { slug: "pdf-to-excel", title: "PDF → Excel", desc: "Текст из PDF в таблицу XLSX.", meta: "→ xlsx", span: "sm:col-span-6", cat: "convert", icon: "pdf-to-jpg" },
-  { slug: "pdf-to-ppt", title: "PDF → PowerPoint", desc: "Каждая страница PDF — слайд с картинкой.", meta: "→ pptx", span: "sm:col-span-6", cat: "convert", icon: "pdf-to-jpg" },
-  { slug: "ocr-pdf", title: "OCR PDF", desc: "Распознайте текст в скане — сделайте PDF searchable (рус+англ).", meta: "→ searchable", span: "sm:col-span-6", cat: "edit", icon: "redact" },
-  { slug: "pdf-to-pdfa", title: "PDF/A", desc: "Конвертируйте в архивный PDF/A для долгого хранения.", meta: "→ PDF/A", span: "sm:col-span-6", cat: "convert", icon: "pdf-to-jpg" },
-  { slug: "html-to-pdf", title: "HTML → PDF", desc: "HTML или URL → PDF через WeasyPrint.", meta: "→ url/html", span: "sm:col-span-6", cat: "convert", icon: "jpg-to-pdf" },
-  { slug: "repair-pdf", title: "Восстановить PDF", desc: "Починка битых PDF — пересборка xref.", meta: "→ fix", span: "sm:col-span-6", cat: "edit", icon: "compress" },
-];
-
 export default function Dashboard() {
+  const t = useTranslations('dashboard');
+  const tc = useTranslations('common');
   const [active, setActive] = useState("organize");
+  const categories: Category[] = [
+    { id: "all", label: t('categories.all.label'), title: t('categories.all.title'), subtitle: t('categories.all.subtitle') },
+    { id: "organize", label: t('categories.organize.label'), title: t('categories.organize.title'), subtitle: t('categories.organize.subtitle') },
+    { id: "optimize", label: t('categories.optimize.label'), title: t('categories.optimize.title'), subtitle: t('categories.optimize.subtitle') },
+    { id: "convert", label: t('categories.convert.label'), title: t('categories.convert.title'), subtitle: t('categories.convert.subtitle') },
+    { id: "edit", label: t('categories.edit.label'), title: t('categories.edit.title'), subtitle: t('categories.edit.subtitle') },
+    { id: "security", label: t('categories.security.label'), title: t('categories.security.title'), subtitle: t('categories.security.subtitle') },
+  ];
+  const tools: Tool[] = [
+    { slug: "merge", title: t('tools.merge.title'), desc: t('tools.merge.desc'), meta: t('tools.merge.meta'), span: "sm:col-span-6", cat: "organize", icon: "merge" },
+    { slug: "split", title: t('tools.split.title'), desc: t('tools.split.desc'), meta: t('tools.split.meta'), span: "sm:col-span-6", cat: "organize", icon: "split" },
+    { slug: "delete", title: t('tools.delete.title'), desc: t('tools.delete.desc'), meta: t('tools.delete.meta'), span: "sm:col-span-6", cat: "organize", icon: "delete" },
+    { slug: "rotate", title: t('tools.rotate.title'), desc: t('tools.rotate.desc'), meta: t('tools.rotate.meta'), span: "sm:col-span-6", cat: "organize", icon: "rotate" },
+    { slug: "crop", title: t('tools.crop.title'), desc: t('tools.crop.desc'), meta: t('tools.crop.meta'), span: "sm:col-span-6", cat: "organize", icon: "crop" },
+    { slug: "compare", title: t('tools.compare.title'), desc: t('tools.compare.desc'), meta: t('tools.compare.meta'), span: "sm:col-span-6", cat: "organize", icon: "compare" },
+    { slug: "organize-pdf", title: t('tools.organize-pdf.title'), desc: t('tools.organize-pdf.desc'), meta: t('tools.organize-pdf.meta'), span: "sm:col-span-6", cat: "organize", icon: "organize-pdf" },
+    { slug: "compress", title: t('tools.compress.title'), desc: t('tools.compress.desc'), meta: t('tools.compress.meta'), span: "sm:col-span-12", cat: "optimize", icon: "compress" },
+    { slug: "pdf-to-jpg", title: t('tools.pdf-to-jpg.title'), desc: t('tools.pdf-to-jpg.desc'), meta: t('tools.pdf-to-jpg.meta'), span: "sm:col-span-6", cat: "convert", icon: "pdf-to-jpg" },
+    { slug: "jpg-to-pdf", title: t('tools.jpg-to-pdf.title'), desc: t('tools.jpg-to-pdf.desc'), meta: t('tools.jpg-to-pdf.meta'), span: "sm:col-span-6", cat: "convert", icon: "jpg-to-pdf" },
+    { slug: "watermark", title: t('tools.watermark.title'), desc: t('tools.watermark.desc'), meta: t('tools.watermark.meta'), span: "sm:col-span-6", cat: "edit", icon: "watermark" },
+    { slug: "page-numbers", title: t('tools.page-numbers.title'), desc: t('tools.page-numbers.desc'), meta: t('tools.page-numbers.meta'), span: "sm:col-span-6", cat: "edit", icon: "page-numbers" },
+    { slug: "sign", title: t('tools.sign.title'), desc: t('tools.sign.desc'), meta: t('tools.sign.meta'), span: "sm:col-span-6", cat: "edit", icon: "sign" },
+    { slug: "redact", title: t('tools.redact.title'), desc: t('tools.redact.desc'), meta: t('tools.redact.meta'), span: "sm:col-span-6", cat: "edit", icon: "redact" },
+    { slug: "protect", title: t('tools.protect.title'), desc: t('tools.protect.desc'), meta: t('tools.protect.meta'), span: "sm:col-span-6", cat: "security", icon: "protect" },
+    { slug: "unlock", title: t('tools.unlock.title'), desc: t('tools.unlock.desc'), meta: t('tools.unlock.meta'), span: "sm:col-span-6", cat: "security", icon: "unlock" },
+    { slug: "word-to-pdf", title: t('tools.word-to-pdf.title'), desc: t('tools.word-to-pdf.desc'), meta: t('tools.word-to-pdf.meta'), span: "sm:col-span-6", cat: "convert", icon: "jpg-to-pdf" },
+    { slug: "excel-to-pdf", title: t('tools.excel-to-pdf.title'), desc: t('tools.excel-to-pdf.desc'), meta: t('tools.excel-to-pdf.meta'), span: "sm:col-span-6", cat: "convert", icon: "jpg-to-pdf" },
+    { slug: "ppt-to-pdf", title: t('tools.ppt-to-pdf.title'), desc: t('tools.ppt-to-pdf.desc'), meta: t('tools.ppt-to-pdf.meta'), span: "sm:col-span-6", cat: "convert", icon: "jpg-to-pdf" },
+    { slug: "pdf-to-word", title: t('tools.pdf-to-word.title'), desc: t('tools.pdf-to-word.desc'), meta: t('tools.pdf-to-word.meta'), span: "sm:col-span-6", cat: "convert", icon: "pdf-to-jpg" },
+    { slug: "pdf-to-excel", title: t('tools.pdf-to-excel.title'), desc: t('tools.pdf-to-excel.desc'), meta: t('tools.pdf-to-excel.meta'), span: "sm:col-span-6", cat: "convert", icon: "pdf-to-jpg" },
+    { slug: "pdf-to-ppt", title: t('tools.pdf-to-ppt.title'), desc: t('tools.pdf-to-ppt.desc'), meta: t('tools.pdf-to-ppt.meta'), span: "sm:col-span-6", cat: "convert", icon: "pdf-to-jpg" },
+    { slug: "ocr-pdf", title: t('tools.ocr-pdf.title'), desc: t('tools.ocr-pdf.desc'), meta: t('tools.ocr-pdf.meta'), span: "sm:col-span-6", cat: "edit", icon: "redact" },
+    { slug: "pdf-to-pdfa", title: t('tools.pdf-to-pdfa.title'), desc: t('tools.pdf-to-pdfa.desc'), meta: t('tools.pdf-to-pdfa.meta'), span: "sm:col-span-6", cat: "convert", icon: "pdf-to-jpg" },
+    { slug: "html-to-pdf", title: t('tools.html-to-pdf.title'), desc: t('tools.html-to-pdf.desc'), meta: t('tools.html-to-pdf.meta'), span: "sm:col-span-6", cat: "convert", icon: "jpg-to-pdf" },
+    { slug: "repair-pdf", title: t('tools.repair-pdf.title'), desc: t('tools.repair-pdf.desc'), meta: t('tools.repair-pdf.meta'), span: "sm:col-span-6", cat: "edit", icon: "compress" },
+  ];
   const filtered = active === "all" ? tools : tools.filter((t) => t.cat === active);
+  const activeCat = categories.find(c=>c.id===active);
   return (
     <div className="space-y-8">
       <div className="text-center">
-        <div className="mx-auto inline-flex items-center gap-2 rounded-full bg-amber-400 px-3 py-1 text-xs font-bold tracking-[0.08em]">BETA · ТЕСТ С ДРУЗЬЯМИ</div>
-        <h1 className="font-[Newsreader] text-[32px] sm:text-[42px] font-[500] tracking-[-0.03em] leading-[0.95] text-[#1b1a17]">PDF Toolkit — 25 инструментов на вашем VPS</h1>
-        <p className="mx-auto mt-3 max-w-[760px] text-[14px] leading-6 text-[#6b6a63]">Все файлы остаются на вашем сервере · Автоудаление через 5 мин · BETA</p>
+        <div className="mx-auto inline-flex items-center gap-2 rounded-full bg-amber-400 px-3 py-1 text-xs font-bold tracking-[0.08em]">{tc('betaTest')}</div>
+        <h1 className="font-[Newsreader] text-[32px] sm:text-[42px] font-[500] tracking-[-0.03em] leading-[0.95] text-[#1b1a17]">{t('title')}</h1>
+        <p className="mx-auto mt-3 max-w-[760px] text-[14px] leading-6 text-[#6b6a63]">{t('subtitle')}</p>
       </div>
       <div className="flex flex-wrap justify-center gap-2">
         {categories.map((cat) => (
@@ -89,6 +91,12 @@ export default function Dashboard() {
           </button>
         ))}
       </div>
+      {activeCat && active !== "all" && (
+        <div className="text-center">
+          <h2 className="text-lg font-semibold text-[#1b1a17]">{activeCat.title}</h2>
+          <p className="text-sm text-[#6b6a63]">{activeCat.subtitle}</p>
+        </div>
+      )}
       <div className="grid grid-cols-12 gap-4">
         {filtered.map((t) => (
           <Link key={t.slug} href={`/tools/${t.slug}`} className={`group relative flex flex-col rounded-[20px] bg-white p-6 shadow-sm border border-black/[0.06] transition hover:shadow-md hover:border-black/10 ${t.span} col-span-12`}>
@@ -99,7 +107,7 @@ export default function Dashboard() {
           </Link>
         ))}
       </div>
-      <div className="rounded-[20px] bg-[#fbfaf8] p-6 text-center text-xs text-[#9a9994]">Local · {tools.length} tools · 50 MB — файлы удаляются через 5 мин</div>
+      <div className="rounded-[20px] bg-[#fbfaf8] p-6 text-center text-xs text-[#9a9994]">{t('footer', {count: tools.length})}</div>
     </div>
   );
 }
