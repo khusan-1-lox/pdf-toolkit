@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect, useCallback } from "react";
 import { DropZone, getAcceptForSlug } from "@/components/DropZone";
@@ -7,8 +7,7 @@ import { StickyBar } from "@/components/StickyBar";
 import { LivePreview } from "@/components/LivePreview";
 import { FileList } from "@/components/FileList";
 import { callTool, callCompare } from "@/lib/api";
-import {Link} from "@/navigation";
-import {useTranslations} from "next-intl";
+import Link from "next/link";
 
 import {
   DndContext,
@@ -27,8 +26,38 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-const TOOL_META_KEYS = ["merge","split","delete","compress","pdf-to-jpg","jpg-to-pdf","rotate","watermark","page-numbers","crop","protect","unlock","redact","sign","compare","organize-pdf","word-to-pdf","excel-to-pdf","ppt-to-pdf","pdf-to-word","pdf-to-excel","pdf-to-ppt","ocr-pdf","pdf-to-pdfa","html-to-pdf","repair-pdf","repair","pdfa"] as const;
-const VALID_SLUGS = new Set(TOOL_META_KEYS as unknown as string[]);
+const TOOL_META: Record<string, { title: string; description: string; multi: boolean }> = {
+  merge: { title: "Merge", description: "Combine multiple PDFs into one", multi: true },
+  split: { title: "Split", description: "Extract pages into separate PDFs (ZIP)", multi: false },
+  delete: { title: "Delete Pages", description: "Remove pages from a PDF", multi: false },
+  compress: { title: "Compress", description: "Reduce PDF file size", multi: false },
+  "pdf-to-jpg": { title: "PDF to JPG", description: "Convert PDF pages to images (ZIP)", multi: false },
+  "jpg-to-pdf": { title: "JPG to PDF", description: "Convert images to a PDF", multi: true },
+  rotate: { title: "Rotate", description: "Вращайте ваш PDF, как только хотите. Вращайте несколько PDF файлов одновременно!", multi: true },
+  watermark: { title: "Водяной знак", description: "Выберите изображение или текст, которые вы хотите вставить в ваш PDF. Выберите положение, прозрачность и шрифт.", multi: false },
+  "page-numbers": { title: "Номера страниц", description: "Легко добавляйте номера страниц в PDF документы. Выберите положение, размеры, формат и шрифт!", multi: false },
+  crop: { title: "Обрезка", description: "Обрезайте поля документов PDF или выбирайте области, а затем применяйте изменения к одной странице или всему документу.", multi: false },
+  protect: { title: "Защита PDF", description: "Зашифруйте PDF паролем. Установите пароль пользователя и владельца, настройте права доступа.", multi: false },
+  unlock: { title: "Открыть PDF", description: "Снимите пароль с защищённого PDF. Введите пароль для разблокировки.", multi: false },
+  redact: { title: "Скрыть данные в PDF", description: "Безвозвратно скройте текст и изображения в PDF — закрасьте чёрным.", multi: false },
+  sign: { title: "Подписать PDF", description: "Добавьте подпись (изображение) в PDF — выберите положение, страницу и прозрачность.", multi: false },
+  compare: { title: "Сравнение PDF-файлов", description: "Сравните два PDF постранично — текст и превью бок о бок.", multi: false },
+  "organize-pdf": { title: "Организовать PDF", description: "Сортируйте страницы, как вам угодно. Удаляйте или добавляйте страницы по своему усмотрению.", multi: false },
+  "word-to-pdf": { title: "Word → PDF", description: "Конвертируйте DOCX/DOC в PDF", multi: false },
+  "excel-to-pdf": { title: "Excel → PDF", description: "Конвертируйте XLSX/XLS в PDF", multi: false },
+  "ppt-to-pdf": { title: "PowerPoint → PDF", description: "Конвертируйте PPTX/PPT в PDF", multi: false },
+  "pdf-to-word": { title: "PDF → Word", description: "Конвертируйте PDF в редактируемый Word", multi: false },
+  "pdf-to-excel": { title: "PDF → Excel", description: "Конвертируйте PDF в Excel", multi: false },
+  "pdf-to-ppt": { title: "PDF → PowerPoint", description: "Конвертируйте PDF в PowerPoint", multi: false },
+  "ocr-pdf": { title: "OCR PDF", description: "Сделайте скан searchable", multi: false },
+  "pdf-to-pdfa": { title: "PDF/A", description: "Конвертация в PDF/A", multi: false },
+  "html-to-pdf": { title: "HTML → PDF", description: "HTML/URL в PDF", multi: false },
+  "repair-pdf": { title: "Восстановить PDF", description: "Починка PDF", multi: false },
+  "repair": { title: "Восстановить PDF", description: "Починка PDF", multi: false },
+  "pdfa": { title: "PDF/A", description: "Конвертация в PDF/A", multi: false },
+};
+
+const VALID_SLUGS = new Set(Object.keys(TOOL_META));
 
 type PageItem = {
   id: string;
@@ -68,6 +97,62 @@ function positionToFlex(pos: string): string {
     default:
       return "items-center justify-center";
   }
+}
+
+function friendlyError(raw: string): string {
+  let detail = raw;
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("{")) {
+    try {
+      const obj = JSON.parse(trimmed);
+      if (obj.detail) detail = String(obj.detail);
+      else if (obj.message) detail = String(obj.message);
+    } catch {
+      // keep raw
+    }
+  }
+  const outOfRangeMatch = detail.match(/Page\s+(\d+)\s+out of range\s*\(file has\s+(\d+)\s+pages\)/i);
+  if (outOfRangeMatch) {
+    const page = outOfRangeMatch[1];
+    const n = outOfRangeMatch[2];
+    return `Страница ${page} вне диапазона. В файле ${n} страниц — введи 1..${n} (например 1,3-5)`;
+  }
+  if (/Page out of range/i.test(detail)) {
+    const nMatch = detail.match(/file has\s+(\d+)/i);
+    if (nMatch) {
+      const n = nMatch[1];
+      return `Страница вне диапазона. В файле ${n} страниц — введи 1..${n} (например 1,3-5)`;
+    }
+    return `Страница вне диапазона. Проверь количество страниц в файле.`;
+  }
+  if (/Invalid pages format/i.test(detail)) return `Неверный формат страниц. Используй формат 1,3-5 (номера через запятую, диапазоны через дефис).`;
+  if (/Invalid page range/i.test(detail)) return `Неверный диапазон — начало больше конца (например 5-3).`;
+  if (/No valid pages/i.test(detail)) return `Не указаны страницы.`;
+  if (/pages parameter required/i.test(detail)) return `Укажи страницы (например 1,3-5).`;
+  if (/Cannot delete all pages/i.test(detail)) return `Нельзя удалить все страницы — оставь хотя бы одну.`;
+  if (/Encrypted PDF/i.test(detail)) return `Зашифрованный PDF не поддерживается.`;
+  if (/Invalid PDF/i.test(detail)) return `Некорректный PDF файл.`;
+  if (/PDF has no pages/i.test(detail)) return `PDF без страниц.`;
+  if (/File too large/i.test(detail)) return `Файл слишком большой.`;
+  if (/Empty file/i.test(detail)) return `Пустой файл.`;
+  if (/Crop margins too large/i.test(detail)) return `Поля обрезки слишком большие — не остаётся видимой области. Уменьши значения.`;
+  if (/Crop rect out of bounds/i.test(detail)) return `Область обрезки выходит за границы страницы. Проверь x,y,w,h.`;
+  if (/Crop rect too small/i.test(detail)) return `Область обрезки слишком маленькая.`;
+  if (/No crop margins provided/i.test(detail)) return `Укажи хотя бы одно поле для обрезки.`;
+  if (/No crop rect/i.test(detail)) return `Укажи x, y, ширину и высоту области.`;
+  if (/Invalid top|Invalid bottom|Invalid left|Invalid right|Invalid x|Invalid y|Invalid w|Invalid h/i.test(detail)) return `Неверные параметры обрезки — проверь числа.`;
+  if (/Invalid mode/i.test(detail)) return `Неверный режим обрезки.`;
+  if (/Invalid unit/i.test(detail)) return `Неверная единица измерения.`;
+  if (/user_password required/i.test(detail)) return `Введите пароль пользователя.`;
+  if (/password required/i.test(detail)) return `Введите пароль.`;
+  if (/Invalid password/i.test(detail)) return `Неверный пароль.`;
+  if (/No texts or hide_images/i.test(detail)) return `Укажи текст для скрытия или включи скрытие изображений.`;
+  if (/At least text or image required/i.test(detail)) return `Введите текст или выберите изображение.`;
+  if (/Invalid position/i.test(detail)) return `Неверная позиция.`;
+  if (/Invalid opacity/i.test(detail)) return `Неверная прозрачность — укажи 0.1-1.0.`;
+  if (/Two files required/i.test(detail)) return `Загрузите два PDF файла для сравнения.`;
+  if (/Sign rect out of bounds/i.test(detail)) return `Область подписи выходит за границы страницы.`;
+  return detail;
 }
 
 function serializePages(set: Set<number>): string {
@@ -151,9 +236,9 @@ function SortablePageCard({ item, position, onRemove }: { item: PageItem; positi
           }}
           onPointerDown={(e) => e.stopPropagation()}
           className="absolute right-1.5 top-1.5 z-10 inline-flex items-center rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-[#e30613] shadow-md ring-1 ring-black/10 opacity-0 transition-opacity hover:bg-[#fff1f1] group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto"
-          aria-label={`╨г╨┤╨░╨╗╨╕╤В╤М ╤Б╤В╤А ${item.pageIndex + 1}`}
+          aria-label={`Удалить стр ${item.pageIndex + 1}`}
         >
-          ╨г╨┤╨░╨╗╨╕╤В╤М
+          Удалить
         </button>
       )}
       <div className="flex items-center justify-between px-1">
@@ -174,21 +259,21 @@ function SortablePageCard({ item, position, onRemove }: { item: PageItem; positi
 
       <div className="relative overflow-hidden rounded-[12px] border border-white/60 bg-white">
         {item.thumb ? (
-          <img src={item.thumb} alt={`╨б╤В╤А. ${item.pageIndex + 1}`} className="aspect-[3/4] w-full object-cover object-top" draggable={false} />
+          <img src={item.thumb} alt={`Стр. ${item.pageIndex + 1}`} className="aspect-[3/4] w-full object-cover object-top" draggable={false} />
         ) : (
           <div className="flex aspect-[3/4] items-center justify-center bg-gradient-to-br from-white/95 to-[rgba(10,132,255,0.07)]">
             <div className="text-center">
               <div className="text-[28px] font-semibold tracking-[-0.02em] text-[#1b1a17]">{item.pageIndex + 1}</div>
-              <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-[#9a9994]">╤Б╤В╤А.</div>
+              <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-[#9a9994]">стр.</div>
             </div>
           </div>
         )}
-        <span className="pointer-events-none absolute bottom-1.5 left-1.5 rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur">╤Б╤В╤А. {item.pageIndex + 1}</span>
+        <span className="pointer-events-none absolute bottom-1.5 left-1.5 rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur">стр. {item.pageIndex + 1}</span>
       </div>
 
       <div className="min-w-0 px-1">
         <p className="truncate text-[11.5px] font-medium leading-tight text-[#1b1a17]">{item.fileName}</p>
-        <p className="text-[11px] text-[#6b6a63]">╨д╨░╨╣╨╗ {item.fileIndex + 1}</p>
+        <p className="text-[11px] text-[#6b6a63]">Файл {item.fileIndex + 1}</p>
       </div>
     </div>
   );
@@ -229,114 +314,29 @@ function SelectablePageCard({
       </div>
       <div className="relative overflow-hidden rounded-[12px] border border-white/60 bg-white">
         {thumb ? (
-          <img src={thumb} alt={`╨б╤В╤А. ${pageNum}`} className="aspect-[3/4] w-full object-cover object-top" draggable={false} />
+          <img src={thumb} alt={`Стр. ${pageNum}`} className="aspect-[3/4] w-full object-cover object-top" draggable={false} />
         ) : (
           <div className="flex aspect-[3/4] items-center justify-center bg-gradient-to-br from-white/95 to-[rgba(10,132,255,0.07)]">
             <div className="text-center">
               <div className="text-[28px] font-semibold tracking-[-0.02em] text-[#1b1a17]">{pageNum}</div>
-              <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-[#9a9994]">╤Б╤В╤А.</div>
+              <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-[#9a9994]">стр.</div>
             </div>
           </div>
         )}
-        <span className="pointer-events-none absolute bottom-1.5 left-1.5 rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur">╤Б╤В╤А. {pageNum}</span>
+        <span className="pointer-events-none absolute bottom-1.5 left-1.5 rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur">стр. {pageNum}</span>
       </div>
     </button>
   );
 }
 
-export default function ToolPage({ params }: { params: { slug: string, locale: string } }) {
+export default function ToolPage({ params }: { params: { slug: string } }) {
   const slug = params.slug;
-  const t = useTranslations("dashboard.tools");
-  const te = useTranslations("errors");
-  const tc = useTranslations("tool");
-  const tCommon = useTranslations("common");
-  const TOOL_META: Record<string, { title: string; description: string; multi: boolean }> = {
-    merge: { title: t("merge.title"), description: t("merge.desc"), multi: true },
-    split: { title: t("split.title"), description: t("split.desc"), multi: false },
-    delete: { title: t("delete.title"), description: t("delete.desc"), multi: false },
-    compress: { title: t("compress.title"), description: t("compress.desc"), multi: false },
-    "pdf-to-jpg": { title: t("pdf-to-jpg.title"), description: t("pdf-to-jpg.desc"), multi: false },
-    "jpg-to-pdf": { title: t("jpg-to-pdf.title"), description: t("jpg-to-pdf.desc"), multi: true },
-    rotate: { title: t("rotate.title"), description: t("rotate.desc"), multi: true },
-    watermark: { title: t("watermark.title"), description: t("watermark.desc"), multi: false },
-    "page-numbers": { title: t("page-numbers.title"), description: t("page-numbers.desc"), multi: false },
-    crop: { title: t("crop.title"), description: t("crop.desc"), multi: false },
-    protect: { title: t("protect.title"), description: t("protect.desc"), multi: false },
-    unlock: { title: t("unlock.title"), description: t("unlock.desc"), multi: false },
-    redact: { title: t("redact.title"), description: t("redact.desc"), multi: false },
-    sign: { title: t("sign.title"), description: t("sign.desc"), multi: false },
-    compare: { title: t("compare.title"), description: t("compare.desc"), multi: false },
-    "organize-pdf": { title: t("organize-pdf.title"), description: t("organize-pdf.desc"), multi: false },
-    "word-to-pdf": { title: t("word-to-pdf.title"), description: t("word-to-pdf.desc"), multi: false },
-    "excel-to-pdf": { title: t("excel-to-pdf.title"), description: t("excel-to-pdf.desc"), multi: false },
-    "ppt-to-pdf": { title: t("ppt-to-pdf.title"), description: t("ppt-to-pdf.desc"), multi: false },
-    "pdf-to-word": { title: t("pdf-to-word.title"), description: t("pdf-to-word.desc"), multi: false },
-    "pdf-to-excel": { title: t("pdf-to-excel.title"), description: t("pdf-to-excel.desc"), multi: false },
-    "pdf-to-ppt": { title: t("pdf-to-ppt.title"), description: t("pdf-to-ppt.desc"), multi: false },
-    "ocr-pdf": { title: t("ocr-pdf.title"), description: t("ocr-pdf.desc"), multi: false },
-    "pdf-to-pdfa": { title: t("pdf-to-pdfa.title"), description: t("pdf-to-pdfa.desc"), multi: false },
-    "html-to-pdf": { title: t("html-to-pdf.title"), description: t("html-to-pdf.desc"), multi: false },
-    "repair-pdf": { title: t("repair-pdf.title"), description: t("repair-pdf.desc"), multi: false },
-    repair: { title: t("repair-pdf.title"), description: t("repair-pdf.desc"), multi: false },
-    pdfa: { title: t("pdf-to-pdfa.title"), description: t("pdf-to-pdfa.desc"), multi: false },
-  };
-
-  function friendlyError(raw: string): string {
-  let detail = raw;
-  const trimmed = raw.trim();
-  if (trimmed.startsWith("{")) {
-    try {
-      const obj = JSON.parse(trimmed);
-      if (obj.detail) detail = String(obj.detail);
-      else if (obj.message) detail = String(obj.message);
-    } catch {
-    }
-  }
-  const outOfRangeMatch = detail.match(/Page\s+(\d+)\s+out of range\s*\(file has\s+(\d+)\s+pages\)/i);
-  if (outOfRangeMatch) {
-    return te("pageOutOfRange", {page: outOfRangeMatch[1], n: outOfRangeMatch[2]});
-  }
-  if (/Page out of range/i.test(detail)) {
-    const nMatch = detail.match(/file has\s+(\d+)/i);
-    if (nMatch) return te("pageOutOfRange", {page: "?", n: nMatch[1]});
-    return te("pageOutOfRangeGeneric");
-  }
-  if (/Invalid pages format/i.test(detail)) return te("invalidPagesFormat");
-  if (/Invalid page range/i.test(detail)) return te("invalidRange");
-  if (/No valid pages/i.test(detail)) return te("noValidPages");
-  if (/pages parameter required/i.test(detail)) return te("pagesRequired");
-  if (/Cannot delete all pages/i.test(detail)) return te("cannotDeleteAll");
-  if (/Encrypted PDF/i.test(detail)) return te("encryptedPdf");
-  if (/Invalid PDF/i.test(detail)) return te("invalidPdf");
-  if (/PDF has no pages/i.test(detail)) return te("pdfNoPages");
-  if (/File too large/i.test(detail)) return te("fileTooLarge");
-  if (/Empty file/i.test(detail)) return te("emptyFile");
-  if (/Crop margins too large/i.test(detail)) return te("cropMarginsTooLarge");
-  if (/Crop rect out of bounds/i.test(detail)) return te("cropRectOutOfBounds");
-  if (/Crop rect too small/i.test(detail)) return te("cropRectTooSmall");
-  if (/No crop margins provided/i.test(detail)) return te("noCropMargins");
-  if (/No crop rect/i.test(detail)) return te("noCropRect");
-  if (/Invalid top|Invalid bottom|Invalid left|Invalid right|Invalid x|Invalid y|Invalid w|Invalid h/i.test(detail)) return te("invalidCropParams");
-  if (/Invalid mode/i.test(detail)) return te("invalidMode");
-  if (/Invalid unit/i.test(detail)) return te("invalidUnit");
-  if (/user_password required/i.test(detail)) return te("userPasswordRequired");
-  if (/password required/i.test(detail)) return te("passwordRequired");
-  if (/Invalid password/i.test(detail)) return te("invalidPassword");
-  if (/No texts or hide_images/i.test(detail)) return te("noTextsOrImages");
-  if (/At least text or image required/i.test(detail)) return te("textOrImageRequired");
-  if (/Invalid position/i.test(detail)) return te("invalidPosition");
-  if (/Invalid opacity/i.test(detail)) return te("invalidOpacity");
-  if (/Two files required/i.test(detail)) return te("twoFilesRequired");
-  if (/Sign rect out of bounds/i.test(detail)) return te("signRectOutOfBounds");
-  return detail;
-}
-
 
   if (!VALID_SLUGS.has(slug)) {
     return (
       <div className="space-y-4">
         <Link href="/" className="text-sm text-blue-600 hover:underline">
-          тЖР ╨Э╨░╨╖╨░╨┤
+          ← Назад
         </Link>
         <div className="rounded-lg border border-red-200 bg-red-50 p-6">
           <h1 className="text-lg font-semibold text-red-800">Unknown tool: {slug}</h1>
@@ -365,7 +365,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
   const [jpgToPdfMargin, setJpgToPdfMargin] = useState("medium");
 
   // watermark opts
-  const [wmText, setWmText] = useState("╨Ю╨▒╤А╨░╨╖╨╡╤Ж");
+  const [wmText, setWmText] = useState("Образец");
   const [wmImage, setWmImage] = useState<File | null>(null);
   const [wmPosition, setWmPosition] = useState("center");
   const [wmOpacity, setWmOpacity] = useState(30);
@@ -411,7 +411,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
   // unlock
   const [unlockPass, setUnlockPass] = useState("");
   // redact
-  const [redactTexts, setRedactTexts] = useState("╤Б╨╡╨║╤А╨╡╤В, ╨║╨╛╨╜╤Д╨╕╨┤╨╡╨╜╤Ж╨╕╨░╨╗╤М╨╜╨╛");
+  const [redactTexts, setRedactTexts] = useState("секрет, конфиденциально");
   const [redactHideImages, setRedactHideImages] = useState(false);
   // sign
   const [signImage, setSignImage] = useState<File | null>(null);
@@ -527,7 +527,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
     };
   }, [files, slug]);
 
-  // Preview for split/delete/watermark (single file) тАУ Task2 LivePreview
+  // Preview for split/delete/watermark (single file) – Task2 LivePreview
   useEffect(() => {
     if (slug !== "split" && slug !== "delete" && slug !== "watermark") {
       setPreview(null);
@@ -653,7 +653,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
     };
   }, [files, slug]);
 
-  // Preview for sign тАУ Task2 LivePreview
+  // Preview for sign – Task2 LivePreview
   useEffect(() => {
     if (slug !== "sign") {
       setSignPreview(null);
@@ -846,7 +846,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
         for (const token of parts) {
           const t = token.trim();
           if (!t) {
-            setError(`╨Э╨╡╨▓╨╡╤А╨╜╤Л╨╣ ╤Д╨╛╤А╨╝╨░╤В ╤Б╤В╤А╨░╨╜╨╕╤Ж. ╨Ш╤Б╨┐╨╛╨╗╤М╨╖╤Г╨╣ ╤Д╨╛╤А╨╝╨░╤В 1,3-5`);
+            setError(`Неверный формат страниц. Используй формат 1,3-5`);
             return;
           }
           if (t.includes("-")) {
@@ -854,32 +854,32 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
             const sStr = t.slice(0, dashIdx).trim();
             const eStr = t.slice(dashIdx + 1).trim();
             if (!sStr || !eStr) {
-              setError(`╨Э╨╡╨▓╨╡╤А╨╜╤Л╨╣ ╤Д╨╛╤А╨╝╨░╤В ╤Б╤В╤А╨░╨╜╨╕╤Ж. ╨Ш╤Б╨┐╨╛╨╗╤М╨╖╤Г╨╣ ╤Д╨╛╤А╨╝╨░╤В 1,3-5`);
+              setError(`Неверный формат страниц. Используй формат 1,3-5`);
               return;
             }
             const s = Number(sStr);
             const e = Number(eStr);
             if (!Number.isInteger(s) || !Number.isInteger(e)) {
-              setError(`╨Э╨╡╨▓╨╡╤А╨╜╤Л╨╣ ╤Д╨╛╤А╨╝╨░╤В ╤Б╤В╤А╨░╨╜╨╕╤Ж. ╨Ш╤Б╨┐╨╛╨╗╤М╨╖╤Г╨╣ ╤Д╨╛╤А╨╝╨░╤В 1,3-5`);
+              setError(`Неверный формат страниц. Используй формат 1,3-5`);
               return;
             }
             if (s < 1 || e < 1 || s > n || e > n) {
               const bad = s < 1 || s > n ? s : e;
-              setError(`╨б╤В╤А╨░╨╜╨╕╤Ж╨░ ${bad} ╨▓╨╜╨╡ ╨┤╨╕╨░╨┐╨░╨╖╨╛╨╜╨░. ╨Т ╤Д╨░╨╣╨╗╨╡ ${n} ╤Б╤В╤А╨░╨╜╨╕╤Ж тАФ ╨▓╨▓╨╡╨┤╨╕ 1..${n} (╨╜╨░╨┐╤А╨╕╨╝╨╡╤А 1,3-5)`);
+              setError(`Страница ${bad} вне диапазона. В файле ${n} страниц — введи 1..${n} (например 1,3-5)`);
               return;
             }
             if (s > e) {
-              setError(`╨Э╨╡╨▓╨╡╤А╨╜╤Л╨╣ ╨┤╨╕╨░╨┐╨░╨╖╨╛╨╜ тАФ ╨╜╨░╤З╨░╨╗╨╛ ╨▒╨╛╨╗╤М╤И╨╡ ╨║╨╛╨╜╤Ж╨░ (╨╜╨░╨┐╤А╨╕╨╝╨╡╤А 5-3).`);
+              setError(`Неверный диапазон — начало больше конца (например 5-3).`);
               return;
             }
           } else {
             const num = Number(t);
             if (!Number.isInteger(num)) {
-              setError(`╨Э╨╡╨▓╨╡╤А╨╜╤Л╨╣ ╤Д╨╛╤А╨╝╨░╤В ╤Б╤В╤А╨░╨╜╨╕╤Ж. ╨Ш╤Б╨┐╨╛╨╗╤М╨╖╤Г╨╣ ╤Д╨╛╤А╨╝╨░╤В 1,3-5`);
+              setError(`Неверный формат страниц. Используй формат 1,3-5`);
               return;
             }
             if (num < 1 || num > n) {
-              setError(`╨б╤В╤А╨░╨╜╨╕╤Ж╨░ ${num} ╨▓╨╜╨╡ ╨┤╨╕╨░╨┐╨░╨╖╨╛╨╜╨░. ╨Т ╤Д╨░╨╣╨╗╨╡ ${n} ╤Б╤В╤А╨░╨╜╨╕╤Ж тАФ ╨▓╨▓╨╡╨┤╨╕ 1..${n} (╨╜╨░╨┐╤А╨╕╨╝╨╡╤А 1,3-5)`);
+              setError(`Страница ${num} вне диапазона. В файле ${n} страниц — введи 1..${n} (например 1,3-5)`);
               return;
             }
           }
@@ -887,7 +887,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
         if (slug === "delete") {
           const set = parsePagesToSet(pages, n);
           if (set && set.size >= n) {
-            setError(`╨Э╨╡╨╗╤М╨╖╤П ╤Г╨┤╨░╨╗╨╕╤В╤М ╨▓╤Б╨╡ ╤Б╤В╤А╨░╨╜╨╕╤Ж╤Л тАФ ╨╛╤Б╤В╨░╨▓╤М ╤Е╨╛╤В╤П ╨▒╤Л ╨╛╨┤╨╜╤Г.`);
+            setError(`Нельзя удалить все страницы — оставь хотя бы одну.`);
             return;
           }
         }
@@ -908,7 +908,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
       const hasText = wmText.trim() !== "";
       const hasImg = wmImage !== null;
       if (!hasText && !hasImg) {
-        setError("╨Т╨▓╨╡╨┤╨╕╤В╨╡ ╤В╨╡╨║╤Б╤В ╨╕╨╗╨╕ ╨▓╤Л╨▒╨╡╤А╨╕╤В╨╡ ╨╕╨╖╨╛╨▒╤А╨░╨╢╨╡╨╜╨╕╨╡ ╨┤╨╗╤П ╨▓╨╛╨┤╤П╨╜╨╛╨│╨╛ ╨╖╨╜╨░╨║╨░");
+        setError("Введите текст или выберите изображение для водяного знака");
         return;
       }
       if (hasText) opts.text = wmText.trim();
@@ -938,7 +938,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
         // validate at least one
         const hasAny = [cropTop, cropBottom, cropLeft, cropRight].some((v) => String(v).trim() !== "" && Number(String(v).replace(",", ".")) !== 0);
         if (!hasAny) {
-          setError("╨г╨║╨░╨╢╨╕ ╤Е╨╛╤В╤П ╨▒╤Л ╨╛╨┤╨╜╨╛ ╨┐╨╛╨╗╨╡ ╨┤╨╗╤П ╨╛╨▒╤А╨╡╨╖╨║╨╕");
+          setError("Укажи хотя бы одно поле для обрезки");
           return;
         }
         opts.top = cropTop;
@@ -947,13 +947,13 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
         opts.right = cropRight;
       } else {
         if (!cropW.trim() || !cropH.trim()) {
-          setError("╨г╨║╨░╨╢╨╕ ╤И╨╕╤А╨╕╨╜╤Г ╨╕ ╨▓╤Л╤Б╨╛╤В╤Г ╨╛╨▒╨╗╨░╤Б╤В╨╕");
+          setError("Укажи ширину и высоту области");
           return;
         }
         const wNum = Number(String(cropW).replace(",", "."));
         const hNum = Number(String(cropH).replace(",", "."));
         if (isNaN(wNum) || isNaN(hNum) || wNum <= 0 || hNum <= 0) {
-          setError("╨Э╨╡╨▓╨╡╤А╨╜╤Л╨╡ ╤А╨░╨╖╨╝╨╡╤А╤Л ╨╛╨▒╨╗╨░╤Б╤В╨╕");
+          setError("Неверные размеры области");
           return;
         }
         opts.x = cropX;
@@ -966,7 +966,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
         const n = cropPreview.numPages;
         const parsed = parsePagesToSet(String(opts.pages), n);
         if (!parsed) {
-          setError(`╨Э╨╡╨▓╨╡╤А╨╜╤Л╨╣ ╤Д╨╛╤А╨╝╨░╤В ╤Б╤В╤А╨░╨╜╨╕╤Ж. ╨Т ╤Д╨░╨╣╨╗╨╡ ${n} ╤Б╤В╤А╨░╨╜╨╕╤Ж тАФ ╨╕╤Б╨┐╨╛╨╗╤М╨╖╤Г╨╣ all ╨╕╨╗╨╕ 1,3-5`);
+          setError(`Неверный формат страниц. В файле ${n} страниц — используй all или 1,3-5`);
           return;
         }
       }
@@ -1005,7 +1005,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
     }
     if (slug === "sign") {
       if (!signImage) {
-        setError("╨Т╤Л╨▒╨╡╤А╨╕╤В╨╡ ╨╕╨╖╨╛╨▒╤А╨░╨╢╨╡╨╜╨╕╨╡ ╨┐╨╛╨┤╨┐╨╕╤Б╨╕");
+        setError("Выберите изображение подписи");
         return;
       }
       opts.image = signImage;
@@ -1074,7 +1074,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <Link href="/" className="inline-block text-sm text-blue-600 hover:underline">
-        тЖР Dashboard
+        ← Dashboard
       </Link>
 
       <div>
@@ -1085,22 +1085,22 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
       {slug === "compare" ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <p className="text-sm font-medium text-[#1b1a17]">╨д╨░╨╣╨╗ 1 (╤Б╨╗╨╡╨▓╨░)</p>
+            <p className="text-sm font-medium text-[#1b1a17]">Файл 1 (слева)</p>
             <DropZone onFiles={(f) => { setCompareFile1(f[0] || null); setError(null); setCompareResult(null); }} maxFiles={1} />
             {compareFile1 && (
               <div className="glass flex items-center justify-between rounded-[12px] px-3 py-2 text-xs">
                 <span className="truncate font-medium text-[#1b1a17]">{compareFile1.name}</span>
-                <button type="button" onClick={() => setCompareFile1(null)} className="ml-2 rounded-full border border-black/10 bg-white px-2 py-0.5 text-xs hover:bg-gray-50">╨г╨┤╨░╨╗╨╕╤В╤М</button>
+                <button type="button" onClick={() => setCompareFile1(null)} className="ml-2 rounded-full border border-black/10 bg-white px-2 py-0.5 text-xs hover:bg-gray-50">Удалить</button>
               </div>
             )}
           </div>
           <div className="space-y-2">
-            <p className="text-sm font-medium text-[#1b1a17]">╨д╨░╨╣╨╗ 2 (╤Б╨┐╤А╨░╨▓╨░)</p>
+            <p className="text-sm font-medium text-[#1b1a17]">Файл 2 (справа)</p>
             <DropZone onFiles={(f) => { setCompareFile2(f[0] || null); setError(null); setCompareResult(null); }} maxFiles={1} />
             {compareFile2 && (
               <div className="glass flex items-center justify-between rounded-[12px] px-3 py-2 text-xs">
                 <span className="truncate font-medium text-[#1b1a17]">{compareFile2.name}</span>
-                <button type="button" onClick={() => setCompareFile2(null)} className="ml-2 rounded-full border border-black/10 bg-white px-2 py-0.5 text-xs hover:bg-gray-50">╨г╨┤╨░╨╗╨╕╤В╤М</button>
+                <button type="button" onClick={() => setCompareFile2(null)} className="ml-2 rounded-full border border-black/10 bg-white px-2 py-0.5 text-xs hover:bg-gray-50">Удалить</button>
               </div>
             )}
           </div>
@@ -1114,9 +1114,9 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
         <div className="space-y-3">
           <div className="glass flex flex-col gap-1 rounded-[16px] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-[13px] font-medium text-[#1b1a17]">╨Я╨╡╤А╨╡╤В╨░╤Й╨╕ ╤Б╤В╤А╨░╨╜╨╕╤Ж╤Л ╤З╤В╨╛╨▒╤Л ╨╕╨╖╨╝╨╡╨╜╨╕╤В╤М ╨┐╨╛╤А╤П╨┤╨╛╨║ ╨║╨░╨║ ╨▓ ilovepdf</p>
+              <p className="text-[13px] font-medium text-[#1b1a17]">Перетащи страницы чтобы изменить порядок как в ilovepdf</p>
               <p className="text-xs text-[#6b6a63]">
-                {pagesLoading ? "╨Ч╨░╨│╤А╤Г╨╖╨║╨░ ╤Б╤В╤А╨░╨╜╨╕╤ЖтАж" : `${pageItems.length} ╤Б╤В╤А. ┬╖ ╨┐╨╡╤А╨╡╤В╨░╤Й╨╕ ╨║╨░╤А╤В╨╛╤З╨║╤Г ╤З╤В╨╛╨▒╤Л ╨┐╨╛╨╝╨╡╨╜╤П╤В╤М ╨┐╨╛╤А╤П╨┤╨╛╨║`}
+                {pagesLoading ? "Загрузка страниц…" : `${pageItems.length} стр. · перетащи карточку чтобы поменять порядок`}
               </p>
             </div>
             <div className="flex gap-2">
@@ -1129,7 +1129,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
                 }}
                 className="rounded-full bg-[#e30613] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#cc0510]"
               >
-                ╨Ф╨╛╨▒╨░╨▓╨╕╤В╤М ╨╡╤Й╨╡ ╤Д╨░╨╣╨╗╤Л
+                Добавить еще файлы
               </button>
               <button
                 type="button"
@@ -1137,7 +1137,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
                 disabled={pagesLoading || pageItems.length === 0}
                 className="rounded-full border border-black/10 bg-white/80 px-3 py-1.5 text-xs font-medium backdrop-blur hover:bg-white disabled:opacity-40"
               >
-                ╨б╨▒╤А╨╛╤Б╨╕╤В╤М
+                Сбросить
               </button>
             </div>
           </div>
@@ -1188,7 +1188,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
           }}
           className="w-full rounded-[12px] border border-dashed border-black/10 bg-white/50 px-4 py-3 text-sm font-medium text-[#1b1a17] hover:bg-white"
         >
-          + ╨Ф╨╛╨▒╨░╨▓╨╕╤В╤М ╨╡╤Й╨╡ ╤Д╨░╨╣╨╗╤Л
+          + Добавить еще файлы
         </button>
       )}
 
@@ -1198,10 +1198,10 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
           <div className="glass flex flex-col gap-2 rounded-[16px] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-[13px] font-medium text-[#1b1a17]">
-                {slug === "split" ? "╨Т╤Л╨▒╨╡╤А╨╕ ╤Б╤В╤А╨░╨╜╨╕╤Ж╤Л ╨┤╨╗╤П ╨╕╨╖╨▓╨╗╨╡╤З╨╡╨╜╨╕╤П тАФ ╨║╨╗╨╕╨║ ╨┐╨╛ ╨╝╨╕╨╜╨╕╨░╤В╤О╤А╨╡" : "╨Т╤Л╨▒╨╡╤А╨╕ ╤Б╤В╤А╨░╨╜╨╕╤Ж╤Л ╨┤╨╗╤П ╤Г╨┤╨░╨╗╨╡╨╜╨╕╤П тАФ ╨║╨╗╨╕╨║ ╨┐╨╛ ╨╝╨╕╨╜╨╕╨░╤В╤О╤А╨╡"}
+                {slug === "split" ? "Выбери страницы для извлечения — клик по миниатюре" : "Выбери страницы для удаления — клик по миниатюре"}
               </p>
               <p className="text-xs text-[#6b6a63]">
-                {previewLoading ? "╨Ч╨░╨│╤А╤Г╨╖╨║╨░ ╤Б╤В╤А╨░╨╜╨╕╤ЖтАж" : preview ? `╨Т ╤Д╨░╨╣╨╗╨╡ ${preview.numPages} ╤Б╤В╤А╨░╨╜╨╕╤Ж ┬╖ ╨▓╤Л╨▒╤А╨░╨╜╨╛ ${selectedPages.size}` : "╨Ч╨░╨│╤А╤Г╨╖╨║╨░ ╨┐╤А╨╡╨▓╤М╤ОтАж"}
+                {previewLoading ? "Загрузка страниц…" : preview ? `В файле ${preview.numPages} страниц · выбрано ${selectedPages.size}` : "Загрузка превью…"}
               </p>
             </div>
             <div className="flex gap-2">
@@ -1211,7 +1211,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
                 disabled={!preview || previewLoading}
                 className="rounded-full border border-black/10 bg-white/80 px-3 py-1.5 text-xs font-medium backdrop-blur hover:bg-white disabled:opacity-40"
               >
-                ╨Т╤Б╨╡
+                Все
               </button>
               <button
                 type="button"
@@ -1219,7 +1219,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
                 disabled={selectedPages.size === 0}
                 className="rounded-full border border-black/10 bg-white/80 px-3 py-1.5 text-xs font-medium backdrop-blur hover:bg-white disabled:opacity-40"
               >
-                ╨б╨╜╤П╤В╤М
+                Снять
               </button>
             </div>
           </div>
@@ -1246,7 +1246,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
               ))}
             </div>
           ) : (
-            <div className="rounded-[16px] border border-dashed border-black/10 bg-white/50 p-6 text-center text-sm text-[#6b6a63]">╨Я╤А╨╡╨▓╤М╤О ╨╜╨╡╨┤╨╛╤Б╤В╤Г╨┐╨╜╨╛ тАФ ╨▓╨▓╨╡╨┤╨╕ ╤Б╤В╤А╨░╨╜╨╕╤Ж╤Л ╨▓╤А╤Г╤З╨╜╤Г╤О</div>
+            <div className="rounded-[16px] border border-dashed border-black/10 bg-white/50 p-6 text-center text-sm text-[#6b6a63]">Превью недоступно — введи страницы вручную</div>
           )}
         </div>
       )}
@@ -1297,9 +1297,9 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
                       type="button"
                       onClick={() => handleRemoveChip(chip)}
                       className="ml-1 flex h-4 w-4 items-center justify-center rounded-full bg-white/20 text-[10px] leading-none hover:bg-white/30"
-                      aria-label={`╨г╨┤╨░╨╗╨╕╤В╤М ${chip}`}
+                      aria-label={`Удалить ${chip}`}
                     >
-                      ├Ч
+                      ×
                     </button>
                   </span>
                 ))}
@@ -1308,46 +1308,46 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
           })()}
           <p className="mt-1 text-xs text-gray-500">
             1-indexed. Ranges with dash, multiple with comma.
-            {preview && !previewLoading && ` ╨Т ╤Д╨░╨╣╨╗╨╡ ${preview.numPages} ╤Б╤В╤А╨░╨╜╨╕╤Ж.`}
+            {preview && !previewLoading && ` В файле ${preview.numPages} страниц.`}
           </p>
-          <p className="mt-1 text-xs text-gray-500">╨Э╨░╨╢╨╝╨╕ ╨╜╨░ ╨╝╨╕╨╜╨╕╨░╤В╤О╤А╤Г ╨╕╨╗╨╕ ╨▓╨▓╨╡╨┤╨╕ ╨▓╤А╤Г╤З╨╜╤Г╤О</p>
+          <p className="mt-1 text-xs text-gray-500">Нажми на миниатюру или введи вручную</p>
           {preview && !previewLoading && (
-            <p className="mt-1 text-xs font-medium text-[#0a84ff]">╨Т ╤Д╨░╨╣╨╗╨╡ {preview.numPages} ╤Б╤В╤А╨░╨╜╨╕╤Ж тАФ ╨▓╨▓╨╡╨┤╨╕ 1..{preview.numPages} (╨╜╨░╨┐╤А╨╕╨╝╨╡╤А 1,3-5)</p>
+            <p className="mt-1 text-xs font-medium text-[#0a84ff]">В файле {preview.numPages} страниц — введи 1..{preview.numPages} (например 1,3-5)</p>
           )}
         </div>
       )}
 
       {slug === "compress" && (
         <div>
-          <p className="text-sm font-medium text-[#1b1a17]">╨г╤А╨╛╨▓╨╡╨╜╤М ╤Б╨╢╨░╤В╨╕╤П</p>
-          <p className="mt-1 text-xs text-[#6b6a63]">╨Т╤Л╨▒╨╡╤А╨╕╤В╨╡ ╨▒╨░╨╗╨░╨╜╤Б ╨╝╨╡╨╢╨┤╤Г ╤А╨░╨╖╨╝╨╡╤А╨╛╨╝ ╤Д╨░╨╣╨╗╨░ ╨╕ ╨║╨░╤З╨╡╤Б╤В╨▓╨╛╨╝.</p>
+          <p className="text-sm font-medium text-[#1b1a17]">Уровень сжатия</p>
+          <p className="mt-1 text-xs text-[#6b6a63]">Выберите баланс между размером файла и качеством.</p>
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <button
               type="button"
               onClick={() => setQuality("low")}
               className={`rounded-[16px] border p-4 text-left transition ${quality === "low" ? "border-[#e30613] bg-[#fef2f2] shadow-sm" : "border-black/10 bg-white/80 hover:bg-white"}`}
             >
-              <p className="text-sm font-semibold text-[#1b1a17]">╨н╨║╤Б╤В╤А╨╡╨╝╨░╨╗╤М╨╜╨╛╨╡</p>
-              <p className="mt-1 text-xs text-[#6b6a63]">╨Ь╨░╨║╤Б╨╕╨╝╨░╨╗╤М╨╜╨╛╨╡ ╤Б╨╢╨░╤В╨╕╨╡</p>
-              <span className="mt-2 inline-block rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-[#6b6a63] border border-black/10">~70% ╨╝╨╡╨╜╤М╤И╨╡</span>
+              <p className="text-sm font-semibold text-[#1b1a17]">Экстремальное</p>
+              <p className="mt-1 text-xs text-[#6b6a63]">Максимальное сжатие</p>
+              <span className="mt-2 inline-block rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-[#6b6a63] border border-black/10">~70% меньше</span>
             </button>
             <button
               type="button"
               onClick={() => setQuality("medium")}
               className={`rounded-[16px] border p-4 text-left transition ${quality === "medium" ? "border-[#e30613] bg-[#fef2f2] shadow-sm" : "border-black/10 bg-white/80 hover:bg-white"}`}
             >
-              <p className="text-sm font-semibold text-[#1b1a17]">╨а╨╡╨║╨╛╨╝╨╡╨╜╨┤╤Г╨╡╨╝╨╛╨╡</p>
-              <p className="mt-1 text-xs text-[#6b6a63]">╨С╨░╨╗╨░╨╜╤Б ╨║╨░╤З╨╡╤Б╤В╨▓╨░</p>
-              <span className="mt-2 inline-block rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-[#6b6a63] border border-black/10">~40% ╨╝╨╡╨╜╤М╤И╨╡</span>
+              <p className="text-sm font-semibold text-[#1b1a17]">Рекомендуемое</p>
+              <p className="mt-1 text-xs text-[#6b6a63]">Баланс качества</p>
+              <span className="mt-2 inline-block rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-[#6b6a63] border border-black/10">~40% меньше</span>
             </button>
             <button
               type="button"
               onClick={() => setQuality("high")}
               className={`rounded-[16px] border p-4 text-left transition ${quality === "high" ? "border-[#e30613] bg-[#fef2f2] shadow-sm" : "border-black/10 bg-white/80 hover:bg-white"}`}
             >
-              <p className="text-sm font-semibold text-[#1b1a17]">╨Э╨╕╨╖╨║╨╛╨╡</p>
-              <p className="mt-1 text-xs text-[#6b6a63]">╨Ы╤Г╤З╤И╨╡╨╡ ╨║╨░╤З╨╡╤Б╤В╨▓╨╛</p>
-              <span className="mt-2 inline-block rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-[#6b6a63] border border-black/10">~10% ╨╝╨╡╨╜╤М╤И╨╡</span>
+              <p className="text-sm font-semibold text-[#1b1a17]">Низкое</p>
+              <p className="mt-1 text-xs text-[#6b6a63]">Лучшее качество</p>
+              <span className="mt-2 inline-block rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-[#6b6a63] border border-black/10">~10% меньше</span>
             </button>
           </div>
         </div>
@@ -1364,9 +1364,9 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
             onChange={(e) => setAngle(e.target.value)}
             className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           >
-            <option value="90">90┬░</option>
-            <option value="180">180┬░</option>
-            <option value="270">270┬░</option>
+            <option value="90">90°</option>
+            <option value="180">180°</option>
+            <option value="270">270°</option>
           </select>
         </div>
       )}
@@ -1374,23 +1374,23 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
       {slug === "watermark" && (
         <div className="space-y-4">
           <div className="glass rounded-[16px] p-5 space-y-4">
-            <p className="text-[13px] font-medium text-[#1b1a17]">╨Т╨╛╨┤╤П╨╜╨╛╨╣ ╨╖╨╜╨░╨║ тАФ ╤В╨╡╨║╤Б╤В ╨╕╨╗╨╕ ╨╕╨╖╨╛╨▒╤А╨░╨╢╨╡╨╜╨╕╨╡</p>
-            <p className="text-xs text-[#6b6a63]">╨Т╤Л╨▒╨╡╤А╨╕╤В╨╡ ╨╕╨╖╨╛╨▒╤А╨░╨╢╨╡╨╜╨╕╨╡ ╨╕╨╗╨╕ ╤В╨╡╨║╤Б╤В, ╨║╨╛╤В╨╛╤А╤Л╨╡ ╨▓╤Л ╤Е╨╛╤В╨╕╤В╨╡ ╨▓╤Б╤В╨░╨▓╨╕╤В╤М ╨▓ ╨▓╨░╤И PDF. ╨Т╤Л╨▒╨╡╤А╨╕╤В╨╡ ╨┐╨╛╨╗╨╛╨╢╨╡╨╜╨╕╨╡, ╨┐╤А╨╛╨╖╤А╨░╤З╨╜╨╛╤Б╤В╤М ╨╕ ╤И╤А╨╕╤Д╤В.</p>
+            <p className="text-[13px] font-medium text-[#1b1a17]">Водяной знак — текст или изображение</p>
+            <p className="text-xs text-[#6b6a63]">Выберите изображение или текст, которые вы хотите вставить в ваш PDF. Выберите положение, прозрачность и шрифт.</p>
 
             <div>
-              <label htmlFor="wmText" className="block text-sm font-medium text-gray-700">╨в╨╡╨║╤Б╤В</label>
+              <label htmlFor="wmText" className="block text-sm font-medium text-gray-700">Текст</label>
               <input
                 id="wmText"
                 type="text"
                 value={wmText}
                 onChange={(e) => setWmText(e.target.value)}
-                placeholder="╨Э╨░╨┐╤А╨╕╨╝╨╡╤А: ╨Ъ╨╛╨╜╤Д╨╕╨┤╨╡╨╜╤Ж╨╕╨░╨╗╤М╨╜╨╛"
+                placeholder="Например: Конфиденциально"
                 className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">╨Ш╨╖╨╛╨▒╤А╨░╨╢╨╡╨╜╨╕╨╡ (╨╛╨┐╤Ж╨╕╨╛╨╜╨░╨╗╤М╨╜╨╛)</label>
+              <label className="block text-sm font-medium text-gray-700">Изображение (опционально)</label>
               <input
                 type="file"
                 accept="image/png,image/jpeg,image/jpg,image/webp"
@@ -1403,22 +1403,22 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
               {wmImage && (
                 <div className="mt-2 flex items-center justify-between rounded-md bg-white/80 px-3 py-2 text-xs">
                   <span className="truncate font-medium text-[#1b1a17]">{wmImage.name}</span>
-                  <button type="button" onClick={() => setWmImage(null)} className="ml-2 rounded-full border border-black/10 bg-white px-2 py-0.5 text-xs hover:bg-gray-50">╨г╨┤╨░╨╗╨╕╤В╤М</button>
+                  <button type="button" onClick={() => setWmImage(null)} className="ml-2 rounded-full border border-black/10 bg-white px-2 py-0.5 text-xs hover:bg-gray-50">Удалить</button>
                 </div>
               )}
-              <p className="mt-1 text-xs text-gray-500">╨Я╨╛╨┤╨┤╨╡╤А╨╢╨╕╨▓╨░╨╡╤В╤Б╤П PNG/JPG/WEBP. ╨Я╤А╨╛╨╖╤А╨░╤З╨╜╨╛╤Б╤В╤М ╨▒╤Г╨┤╨╡╤В ╨┐╤А╨╕╨╝╨╡╨╜╨╡╨╜╨░.</p>
+              <p className="mt-1 text-xs text-gray-500">Поддерживается PNG/JPG/WEBP. Прозрачность будет применена.</p>
             </div>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-gray-700">╨Я╨╛╨╗╨╛╨╢╨╡╨╜╨╕╨╡</label>
+                <label className="block text-sm font-medium text-gray-700">Положение</label>
                 <div className="mt-2">
                   <PositionGrid value={wmPosition} onChange={setWmPosition} />
                 </div>
               </div>
 
               <div>
-                <label htmlFor="wmFontSize" className="block text-sm font-medium text-gray-700">╨а╨░╨╖╨╝╨╡╤А ╤И╤А╨╕╤Д╤В╨░</label>
+                <label htmlFor="wmFontSize" className="block text-sm font-medium text-gray-700">Размер шрифта</label>
                 <select
                   id="wmFontSize"
                   value={wmFontSize}
@@ -1437,7 +1437,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label htmlFor="wmFontFamily" className="block text-sm font-medium text-gray-700">╨и╤А╨╕╤Д╤В</label>
+                <label htmlFor="wmFontFamily" className="block text-sm font-medium text-gray-700">Шрифт</label>
                 <select
                   id="wmFontFamily"
                   value={wmFontFamily}
@@ -1460,26 +1460,26 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
                     onChange={(e) => setWmTiling(e.target.checked)}
                     className="h-4 w-4 rounded border-gray-300 text-[#0a84ff] focus:ring-[#0a84ff]"
                   />
-                  ╨Я╨╛╨▓╤В╨╛╤А╤П╤В╤М ╨┐╨╛ ╨┤╨╕╨░╨│╨╛╨╜╨░╨╗╨╕ (╨┐╨╗╨╕╤В╨║╨░)
+                  Повторять по диагонали (плитка)
                 </label>
               </div>
             </div>
 
             <div className="space-y-2">
-              <p className="text-xs font-medium text-[#1b1a17]">╨Я╤А╨╡╨▓╤М╤О {preview ? `${preview.numPages} ╤Б╤В╤А.` : ""} {previewLoading ? "тАФ ╨╖╨░╨│╤А╤Г╨╖╨║╨░тАж" : ""}</p>
+              <p className="text-xs font-medium text-[#1b1a17]">Превью {preview ? `${preview.numPages} стр.` : ""} {previewLoading ? "— загрузка…" : ""}</p>
               <LivePreview
                 thumb={preview?.pages[0]?.thumb ?? null}
-                label="╨Я╤А╨╡╨▓╤М╤О"
+                label="Превью"
                 overlay={
                   <div className={`flex h-full w-full p-4 ${positionToFlex(wmPosition)}`}>
-                    <span style={{ color: wmColor, fontSize: `${wmFontSize}px`, opacity: wmOpacity / 100, transform: `rotate(${wmRotation}deg)`, fontFamily: wmFontFamily }}>{wmText || "╨Ю╨▒╤А╨░╨╖╨╡╤Ж"}</span>
+                    <span style={{ color: wmColor, fontSize: `${wmFontSize}px`, opacity: wmOpacity / 100, transform: `rotate(${wmRotation}deg)`, fontFamily: wmFontFamily }}>{wmText || "Образец"}</span>
                   </div>
                 }
               />
             </div>
 
             <div>
-              <label htmlFor="wmOpacity" className="block text-sm font-medium text-gray-700">╨Я╤А╨╛╨╖╤А╨░╤З╨╜╨╛╤Б╤В╤М: {wmOpacity}%</label>
+              <label htmlFor="wmOpacity" className="block text-sm font-medium text-gray-700">Прозрачность: {wmOpacity}%</label>
               <input
                 id="wmOpacity"
                 type="range"
@@ -1497,7 +1497,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label htmlFor="wmColor" className="block text-sm font-medium text-gray-700">╨ж╨▓╨╡╤В</label>
+                <label htmlFor="wmColor" className="block text-sm font-medium text-gray-700">Цвет</label>
                 <div className="mt-1 flex items-center gap-2">
                   <input
                     id="wmColor"
@@ -1517,32 +1517,32 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
               </div>
 
               <div>
-                <label htmlFor="wmRotation" className="block text-sm font-medium text-gray-700">╨Я╨╛╨▓╨╛╤А╨╛╤В (┬░)</label>
+                <label htmlFor="wmRotation" className="block text-sm font-medium text-gray-700">Поворот (°)</label>
                 <select
                   id="wmRotation"
                   value={wmRotation}
                   onChange={(e) => setWmRotation(e.target.value)}
                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 >
-                  <option value="0">0┬░</option>
-                  <option value="45">45┬░</option>
-                  <option value="90">90┬░</option>
-                  <option value="180">180┬░</option>
-                  <option value="270">270┬░</option>
-                  <option value="315">315┬░</option>
+                  <option value="0">0°</option>
+                  <option value="45">45°</option>
+                  <option value="90">90°</option>
+                  <option value="180">180°</option>
+                  <option value="270">270°</option>
+                  <option value="315">315°</option>
                 </select>
               </div>
             </div>
           </div>
-          <p className="text-xs text-gray-500">╨в╤А╨╡╨▒╤Г╨╡╤В╤Б╤П ╤В╨╡╨║╤Б╤В ╨╕╨╗╨╕ ╨╕╨╖╨╛╨▒╤А╨░╨╢╨╡╨╜╨╕╨╡. ╨Я╤А╨╕ ╤Г╨║╨░╨╖╨░╨╜╨╕╨╕ ╨╛╨▒╨╛╨╕╤Е тАФ ╨▒╤Г╨┤╤Г╤В ╨╜╨░╨╜╨╡╤Б╨╡╨╜╤Л ╨╛╨▒╨░ ╤Б╨╗╨╛╤П ╨╜╨░ ╨║╨░╨╢╨┤╤Г╤О ╤Б╤В╤А╨░╨╜╨╕╤Ж╤Г.</p>
+          <p className="text-xs text-gray-500">Требуется текст или изображение. При указании обоих — будут нанесены оба слоя на каждую страницу.</p>
         </div>
       )}
 
       {slug === "crop" && (
         <div className="space-y-4">
           <div className="glass rounded-[16px] p-5 space-y-4">
-            <p className="text-[13px] font-medium text-[#1b1a17]">╨Ю╨▒╤А╨╡╨╖╨║╨░ тАФ ╨┐╨╛╨╗╤П ╨╕╨╗╨╕ ╨╛╨▒╨╗╨░╤Б╤В╤М</p>
-            <p className="text-xs text-[#6b6a63]">╨Ю╨▒╤А╨╡╨╖╨░╨╣╤В╨╡ ╨┐╨╛╨╗╤П ╨┤╨╛╨║╤Г╨╝╨╡╨╜╤В╨╛╨▓ PDF ╨╕╨╗╨╕ ╨▓╤Л╨▒╨╕╤А╨░╨╣╤В╨╡ ╨╛╨▒╨╗╨░╤Б╤В╨╕, ╨░ ╨╖╨░╤В╨╡╨╝ ╨┐╤А╨╕╨╝╨╡╨╜╤П╨╣╤В╨╡ ╨╕╨╖╨╝╨╡╨╜╨╡╨╜╨╕╤П ╨║ ╨╛╨┤╨╜╨╛╨╣ ╤Б╤В╤А╨░╨╜╨╕╤Ж╨╡ ╨╕╨╗╨╕ ╨▓╤Б╨╡╨╝╤Г ╨┤╨╛╨║╤Г╨╝╨╡╨╜╤В╤Г.</p>
+            <p className="text-[13px] font-medium text-[#1b1a17]">Обрезка — поля или область</p>
+            <p className="text-xs text-[#6b6a63]">Обрезайте поля документов PDF или выбирайте области, а затем применяйте изменения к одной странице или всему документу.</p>
 
             {/* mode toggle */}
             <div className="flex gap-2">
@@ -1551,14 +1551,14 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
                 onClick={() => setCropMode("margins")}
                 className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition ${cropMode === "margins" ? "bg-[#0a84ff] text-white shadow" : "bg-white/80 border border-black/10 text-[#1b1a17] hover:bg-white"}`}
               >
-                ╨Я╨╛╨╗╤П
+                Поля
               </button>
               <button
                 type="button"
                 onClick={() => setCropMode("rect")}
                 className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition ${cropMode === "rect" ? "bg-[#0a84ff] text-white shadow" : "bg-white/80 border border-black/10 text-[#1b1a17] hover:bg-white"}`}
               >
-                ╨Ю╨▒╨╗╨░╤Б╤В╤М (x,y,w,h)
+                Область (x,y,w,h)
               </button>
             </div>
 
@@ -1570,7 +1570,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
                     onClick={() => setCropUnit("mm")}
                     className={`rounded-full px-3 py-1 text-xs font-medium ${cropUnit === "mm" ? "bg-[#1b1a17] text-white" : "bg-white/70 border border-black/10"}`}
                   >
-                    ╨╝╨╝
+                    мм
                   </button>
                   <button
                     type="button"
@@ -1579,26 +1579,26 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
                   >
                     pt
                   </button>
-                  <span className="ml-2 text-[11px] text-[#6b6a63] self-center">1 ╨╝╨╝ = 2.83 pt</span>
+                  <span className="ml-2 text-[11px] text-[#6b6a63] self-center">1 мм = 2.83 pt</span>
                 </div>
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                   <div>
-                    <label htmlFor="cropTop" className="block text-sm font-medium text-gray-700">╨б╨▓╨╡╤А╤Е╤Г</label>
+                    <label htmlFor="cropTop" className="block text-sm font-medium text-gray-700">Сверху</label>
                     <input id="cropTop" type="number" min={0} max={1000} step={cropUnit === "mm" ? 1 : 5} value={cropTop} onChange={(e) => setCropTop(e.target.value)} className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="10" />
                     <span className="text-[11px] text-[#9a9994]">{cropUnit}</span>
                   </div>
                   <div>
-                    <label htmlFor="cropBottom" className="block text-sm font-medium text-gray-700">╨б╨╜╨╕╨╖╤Г</label>
+                    <label htmlFor="cropBottom" className="block text-sm font-medium text-gray-700">Снизу</label>
                     <input id="cropBottom" type="number" min={0} max={1000} step={cropUnit === "mm" ? 1 : 5} value={cropBottom} onChange={(e) => setCropBottom(e.target.value)} className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="10" />
                     <span className="text-[11px] text-[#9a9994]">{cropUnit}</span>
                   </div>
                   <div>
-                    <label htmlFor="cropLeft" className="block text-sm font-medium text-gray-700">╨б╨╗╨╡╨▓╨░</label>
+                    <label htmlFor="cropLeft" className="block text-sm font-medium text-gray-700">Слева</label>
                     <input id="cropLeft" type="number" min={0} max={1000} step={cropUnit === "mm" ? 1 : 5} value={cropLeft} onChange={(e) => setCropLeft(e.target.value)} className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="10" />
                     <span className="text-[11px] text-[#9a9994]">{cropUnit}</span>
                   </div>
                   <div>
-                    <label htmlFor="cropRight" className="block text-sm font-medium text-gray-700">╨б╨┐╤А╨░╨▓╨░</label>
+                    <label htmlFor="cropRight" className="block text-sm font-medium text-gray-700">Справа</label>
                     <input id="cropRight" type="number" min={0} max={1000} step={cropUnit === "mm" ? 1 : 5} value={cropRight} onChange={(e) => setCropRight(e.target.value)} className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="10" />
                     <span className="text-[11px] text-[#9a9994]">{cropUnit}</span>
                   </div>
@@ -1617,12 +1617,12 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
                   <span className="text-[11px] text-[#9a9994]">pt</span>
                 </div>
                 <div>
-                  <label htmlFor="cropW" className="block text-sm font-medium text-gray-700">╨и╨╕╤А╨╕╨╜╨░ (w)</label>
+                  <label htmlFor="cropW" className="block text-sm font-medium text-gray-700">Ширина (w)</label>
                   <input id="cropW" type="number" min={1} value={cropW} onChange={(e) => setCropW(e.target.value)} className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="200" />
                   <span className="text-[11px] text-[#9a9994]">pt</span>
                 </div>
                 <div>
-                  <label htmlFor="cropH" className="block text-sm font-medium text-gray-700">╨Т╤Л╤Б╨╛╤В╨░ (h)</label>
+                  <label htmlFor="cropH" className="block text-sm font-medium text-gray-700">Высота (h)</label>
                   <input id="cropH" type="number" min={1} value={cropH} onChange={(e) => setCropH(e.target.value)} className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="200" />
                   <span className="text-[11px] text-[#9a9994]">pt</span>
                 </div>
@@ -1630,26 +1630,26 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
             )}
 
             <div>
-              <label htmlFor="cropPages" className="block text-sm font-medium text-gray-700">╨б╤В╤А╨░╨╜╨╕╤Ж╤Л</label>
+              <label htmlFor="cropPages" className="block text-sm font-medium text-gray-700">Страницы</label>
               <div className="mt-1 flex gap-2">
                 <input
                   id="cropPages"
                   type="text"
                   value={cropPages}
                   onChange={(e) => setCropPages(e.target.value)}
-                  placeholder='all ╨╕╨╗╨╕ 1,3-5'
+                  placeholder='all или 1,3-5'
                   className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
-                <button type="button" onClick={() => setCropPages("all")} className={`rounded-full px-4 py-2 text-xs font-medium whitespace-nowrap ${cropPages === "all" ? "bg-[#0a84ff] text-white" : "bg-white border border-black/10"}`}>╨Т╤Б╨╡</button>
+                <button type="button" onClick={() => setCropPages("all")} className={`rounded-full px-4 py-2 text-xs font-medium whitespace-nowrap ${cropPages === "all" ? "bg-[#0a84ff] text-white" : "bg-white border border-black/10"}`}>Все</button>
               </div>
-              <p className="mt-1 text-xs text-gray-500">all тАФ ╨▓╨╡╤Б╤М ╨┤╨╛╨║╤Г╨╝╨╡╨╜╤В, ╨╕╨╗╨╕ ╤Г╨║╨░╨╢╨╕ 1,3-5. {cropPreview && !cropPreviewLoading && ` ╨Т ╤Д╨░╨╣╨╗╨╡ ${cropPreview.numPages} ╤Б╤В╤А.`}</p>
+              <p className="mt-1 text-xs text-gray-500">all — весь документ, или укажи 1,3-5. {cropPreview && !cropPreviewLoading && ` В файле ${cropPreview.numPages} стр.`}</p>
             </div>
 
             <div className="space-y-2">
-              <p className="text-xs font-medium text-[#1b1a17]">Live ╨┐╤А╨╡╨▓╤М╤О тАФ ╤Б╨╕╨╜╨╕╨╣ ╨║╨╛╨╜╤В╤Г╤А = ╨╛╨▒╨╗╨░╤Б╤В╤М ╨┐╨╛╤Б╨╗╨╡ ╨╛╨▒╤А╨╡╨╖╨║╨╕ {cropPreview ? `${cropPreview.numPages} ╤Б╤В╤А.` : ""} {cropPreviewLoading ? "тАФ ╨╖╨░╨│╤А╤Г╨╖╨║╨░тАж" : ""}</p>
+              <p className="text-xs font-medium text-[#1b1a17]">Live превью — синий контур = область после обрезки {cropPreview ? `${cropPreview.numPages} стр.` : ""} {cropPreviewLoading ? "— загрузка…" : ""}</p>
               <LivePreview
                 thumb={cropPreview?.pages[0]?.thumb ?? null}
-                label="╨Я╤А╨╡╨▓╤М╤О"
+                label="Превью"
                 overlay={(() => {
                   const isTarget = (() => {
                     if (!cropPreview) return true;
@@ -1657,7 +1657,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
                     const set = parsePagesToSet(cropPages, cropPreview.numPages);
                     return set ? set.has(1) : false;
                   })();
-                  if (!isTarget) return <div className="flex h-full w-full items-center justify-center p-4"><span className="rounded-full bg-white/90 px-2 py-1 text-[10px] font-medium text-[#6b6a63]">╨▒╨╡╨╖ ╨╕╨╖╨╝╨╡╨╜╨╡╨╜╨╕╨╣</span></div>;
+                  if (!isTarget) return <div className="flex h-full w-full items-center justify-center p-4"><span className="rounded-full bg-white/90 px-2 py-1 text-[10px] font-medium text-[#6b6a63]">без изменений</span></div>;
                   if (cropMode === "margins") {
                     const toPt = (v: string) => {
                       const num = parseFloat(String(v).replace(",", ".")) || 0;
@@ -1694,7 +1694,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
             {/* preview thumbnails with crop overlay */}
             {files.length > 0 && (
               <div className="space-y-2">
-                <p className="text-xs font-medium text-[#1b1a17]">╨Я╤А╨╡╨▓╤М╤О{cropPreview ? ` ${cropPreview.numPages} ╤Б╤В╤А.` : ""} {cropPreviewLoading ? "тАФ ╨╖╨░╨│╤А╤Г╨╖╨║╨░тАж" : "тАФ ╤Б╨╕╨╜╨╕╨╣ ╨║╨╛╨╜╤В╤Г╤А = ╨╛╨▒╨╗╨░╤Б╤В╤М ╨┐╨╛╤Б╨╗╨╡ ╨╛╨▒╤А╨╡╨╖╨║╨╕"}</p>
+                <p className="text-xs font-medium text-[#1b1a17]">Превью{cropPreview ? ` ${cropPreview.numPages} стр.` : ""} {cropPreviewLoading ? "— загрузка…" : "— синий контур = область после обрезки"}</p>
                 {cropPreviewLoading ? (
                   <div className="grid grid-cols-3 gap-2">
                     {Array.from({ length: 3 }).map((_, i) => (
@@ -1750,18 +1750,18 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
                       }
                       return (
                         <div key={p.page} className={`relative overflow-hidden rounded-[12px] border bg-white ${isTarget ? "border-[#0a84ff]/40 shadow-[0_0_0_2px_rgba(10,132,255,0.15)]" : "border-white/60 opacity-60"}`}>
-                          <img src={p.thumb} alt={`╤Б╤В╤А ${p.page + 1}`} className="aspect-[3/4] w-full object-cover object-top" />
+                          <img src={p.thumb} alt={`стр ${p.page + 1}`} className="aspect-[3/4] w-full object-cover object-top" />
                           {overlayStyle && <div style={overlayStyle} />}
-                          <span className="absolute bottom-1 left-1 rounded-full bg-black/70 px-1.5 py-0.5 text-[9px] font-medium text-white">╤Б╤В╤А. {p.page + 1}</span>
-                          {!isTarget && <span className="absolute top-1 right-1 rounded-full bg-white/90 px-1.5 py-0.5 text-[8px] font-medium text-[#6b6a63]">╨▒╨╡╨╖ ╨╕╨╖╨╝╨╡╨╜╨╡╨╜╨╕╨╣</span>}
+                          <span className="absolute bottom-1 left-1 rounded-full bg-black/70 px-1.5 py-0.5 text-[9px] font-medium text-white">стр. {p.page + 1}</span>
+                          {!isTarget && <span className="absolute top-1 right-1 rounded-full bg-white/90 px-1.5 py-0.5 text-[8px] font-medium text-[#6b6a63]">без изменений</span>}
                         </div>
                       );
                     })}
                   </div>
                 ) : (
-                  <div className="rounded-[12px] border border-dashed border-black/10 bg-white/50 p-4 text-center text-xs text-[#6b6a63]">╨Я╤А╨╡╨▓╤М╤О ╨╜╨╡╨┤╨╛╤Б╤В╤Г╨┐╨╜╨╛</div>
+                  <div className="rounded-[12px] border border-dashed border-black/10 bg-white/50 p-4 text-center text-xs text-[#6b6a63]">Превью недоступно</div>
                 )}
-                {cropPreview && cropPreview.numPages > 8 && <p className="text-[11px] text-[#9a9994]">╨Я╨╛╨║╨░╨╖╨░╨╜╤Л ╨┐╨╡╤А╨▓╤Л╨╡ 8 ╨╕╨╖ {cropPreview.numPages} ╤Б╤В╤А╨░╨╜╨╕╤Ж.</p>}
+                {cropPreview && cropPreview.numPages > 8 && <p className="text-[11px] text-[#9a9994]">Показаны первые 8 из {cropPreview.numPages} страниц.</p>}
               </div>
             )}
           </div>
@@ -1771,24 +1771,24 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
       {slug === "protect" && (
         <div className="space-y-4">
           <div className="glass rounded-[16px] p-5 space-y-4">
-            <p className="text-[13px] font-medium text-[#1b1a17]">╨Ч╨░╤Й╨╕╤В╨░ PDF тАФ ╨┐╨░╤А╨╛╨╗╨╕ ╨╕ ╨┐╤А╨░╨▓╨░</p>
-            <p className="text-xs text-[#6b6a63]">╨г╤Б╤В╨░╨╜╨╛╨▓╨╕╤В╨╡ ╨┐╨░╤А╨╛╨╗╤М ╨┐╨╛╨╗╤М╨╖╨╛╨▓╨░╤В╨╡╨╗╤П (╨╛╨▒╤П╨╖╨░╤В╨╡╨╗╨╡╨╜) ╨╕ ╨▓╨╗╨░╨┤╨╡╨╗╤М╤Ж╨░ (╨╛╨┐╤Ж╨╕╨╛╨╜╨░╨╗╤М╨╜╨╛). ╨Э╨░╤Б╤В╤А╨╛╨╣╤В╨╡ ╤А╨░╨╖╤А╨╡╤И╨╡╨╜╨╕╤П.</p>
+            <p className="text-[13px] font-medium text-[#1b1a17]">Защита PDF — пароли и права</p>
+            <p className="text-xs text-[#6b6a63]">Установите пароль пользователя (обязателен) и владельца (опционально). Настройте разрешения.</p>
             <div>
-              <label className="block text-sm font-medium text-gray-700">╨Я╨░╤А╨╛╨╗╤М ╨┐╨╛╨╗╤М╨╖╨╛╨▓╨░╤В╨╡╨╗╤П *</label>
-              <input type="password" value={protectPass} onChange={(e) => setProtectPass(e.target.value)} placeholder="тАвтАвтАвтАвтАвтАвтАвтАв" className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+              <label className="block text-sm font-medium text-gray-700">Пароль пользователя *</label>
+              <input type="password" value={protectPass} onChange={(e) => setProtectPass(e.target.value)} placeholder="••••••••" className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">╨Я╨░╤А╨╛╨╗╤М ╨▓╨╗╨░╨┤╨╡╨╗╤М╤Ж╨░ (╨╛╨┐╤Ж╨╕╨╛╨╜╨░╨╗╤М╨╜╨╛)</label>
-              <input type="password" value={protectOwnerPass} onChange={(e) => setProtectOwnerPass(e.target.value)} placeholder="тАвтАвтАвтАвтАвтАвтАвтАв" className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-              <p className="mt-1 text-xs text-gray-500">╨Х╤Б╨╗╨╕ ╨╜╨╡ ╤Г╨║╨░╨╖╨░╨╜ тАФ ╤Б╨╛╨▓╨┐╨░╨┤╨░╨╡╤В ╤Б ╨┐╨░╤А╨╛╨╗╨╡╨╝ ╨┐╨╛╨╗╤М╨╖╨╛╨▓╨░╤В╨╡╨╗╤П.</p>
+              <label className="block text-sm font-medium text-gray-700">Пароль владельца (опционально)</label>
+              <input type="password" value={protectOwnerPass} onChange={(e) => setProtectOwnerPass(e.target.value)} placeholder="••••••••" className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+              <p className="mt-1 text-xs text-gray-500">Если не указан — совпадает с паролем пользователя.</p>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <label className="flex items-center gap-2 text-sm text-[#1b1a17]"><input type="checkbox" checked={protectAllowPrint} onChange={(e) => setProtectAllowPrint(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#0a84ff] focus:ring-[#0a84ff]" /> ╨Я╨╡╤З╨░╤В╤М</label>
-              <label className="flex items-center gap-2 text-sm text-[#1b1a17]"><input type="checkbox" checked={protectAllowCopy} onChange={(e) => setProtectAllowCopy(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#0a84ff] focus:ring-[#0a84ff]" /> ╨Ъ╨╛╨┐╨╕╤А╨╛╨▓╨░╨╜╨╕╨╡</label>
-              <label className="flex items-center gap-2 text-sm text-[#1b1a17]"><input type="checkbox" checked={protectAllowModify} onChange={(e) => setProtectAllowModify(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#0a84ff] focus:ring-[#0a84ff]" /> ╨Ш╨╖╨╝╨╡╨╜╨╡╨╜╨╕╨╡</label>
-              <label className="flex items-center gap-2 text-sm text-[#1b1a17]"><input type="checkbox" checked={protectAllowAnnotate} onChange={(e) => setProtectAllowAnnotate(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#0a84ff] focus:ring-[#0a84ff]" /> ╨Р╨╜╨╜╨╛╤В╨░╤Ж╨╕╨╕</label>
+              <label className="flex items-center gap-2 text-sm text-[#1b1a17]"><input type="checkbox" checked={protectAllowPrint} onChange={(e) => setProtectAllowPrint(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#0a84ff] focus:ring-[#0a84ff]" /> Печать</label>
+              <label className="flex items-center gap-2 text-sm text-[#1b1a17]"><input type="checkbox" checked={protectAllowCopy} onChange={(e) => setProtectAllowCopy(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#0a84ff] focus:ring-[#0a84ff]" /> Копирование</label>
+              <label className="flex items-center gap-2 text-sm text-[#1b1a17]"><input type="checkbox" checked={protectAllowModify} onChange={(e) => setProtectAllowModify(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#0a84ff] focus:ring-[#0a84ff]" /> Изменение</label>
+              <label className="flex items-center gap-2 text-sm text-[#1b1a17]"><input type="checkbox" checked={protectAllowAnnotate} onChange={(e) => setProtectAllowAnnotate(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#0a84ff] focus:ring-[#0a84ff]" /> Аннотации</label>
             </div>
-            <p className="text-xs text-gray-500">╨Ш╤Б╨┐╨╛╨╗╤М╨╖╤Г╨╡╤В╤Б╤П 128-bit ╤И╨╕╤Д╤А╨╛╨▓╨░╨╜╨╕╨╡ (AES-128).</p>
+            <p className="text-xs text-gray-500">Используется 128-bit шифрование (AES-128).</p>
           </div>
         </div>
       )}
@@ -1796,11 +1796,11 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
       {slug === "unlock" && (
         <div className="space-y-4">
           <div className="glass rounded-[16px] p-5 space-y-4">
-            <p className="text-[13px] font-medium text-[#1b1a17]">╨Ю╤В╨║╤А╤Л╤В╤М PDF тАФ ╨▓╨▓╨╛╨┤ ╨┐╨░╤А╨╛╨╗╤П</p>
-            <p className="text-xs text-[#6b6a63]">╨Т╨▓╨╡╨┤╨╕╤В╨╡ ╨┐╨░╤А╨╛╨╗╤М ╨╛╤В ╨╖╨░╤И╨╕╤Д╤А╨╛╨▓╨░╨╜╨╜╨╛╨│╨╛ PDF, ╤З╤В╨╛╨▒╤Л ╤Б╨╜╤П╤В╤М ╨╖╨░╤Й╨╕╤В╤Г.</p>
+            <p className="text-[13px] font-medium text-[#1b1a17]">Открыть PDF — ввод пароля</p>
+            <p className="text-xs text-[#6b6a63]">Введите пароль от зашифрованного PDF, чтобы снять защиту.</p>
             <div>
-              <label className="block text-sm font-medium text-gray-700">╨Я╨░╤А╨╛╨╗╤М *</label>
-              <input type="password" value={unlockPass} onChange={(e) => setUnlockPass(e.target.value)} placeholder="тАвтАвтАвтАвтАвтАвтАвтАв" className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+              <label className="block text-sm font-medium text-gray-700">Пароль *</label>
+              <input type="password" value={unlockPass} onChange={(e) => setUnlockPass(e.target.value)} placeholder="••••••••" className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
             </div>
           </div>
         </div>
@@ -1809,16 +1809,16 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
       {slug === "redact" && (
         <div className="space-y-4">
           <div className="glass rounded-[16px] p-5 space-y-4">
-            <p className="text-[13px] font-medium text-[#1b1a17]">╨б╨║╤А╤Л╤В╤М ╨┤╨░╨╜╨╜╤Л╨╡ тАФ ╨▒╨╡╨╖╨▓╨╛╨╖╨▓╤А╨░╤В╨╜╨╛╨╡ ╨╖╨░╨║╤А╨░╤И╨╕╨▓╨░╨╜╨╕╨╡</p>
-            <p className="text-xs text-[#6b6a63]">╨г╨║╨░╨╢╨╕╤В╨╡ ╤Д╤А╨░╨╖╤Л ╤З╨╡╤А╨╡╨╖ ╨╖╨░╨┐╤П╤В╤Г╤О тАФ ╨╛╨╜╨╕ ╨▒╤Г╨┤╤Г╤В ╨╖╨░╨║╤А╨░╤И╨╡╨╜╤Л ╤З╤С╤А╨╜╤Л╨╝. ╨Ш╨╗╨╕ ╤Б╨║╤А╨╛╨╣╤В╨╡ ╨▓╤Б╨╡ ╨╕╨╖╨╛╨▒╤А╨░╨╢╨╡╨╜╨╕╤П.</p>
+            <p className="text-[13px] font-medium text-[#1b1a17]">Скрыть данные — безвозвратное закрашивание</p>
+            <p className="text-xs text-[#6b6a63]">Укажите фразы через запятую — они будут закрашены чёрным. Или скройте все изображения.</p>
             <div>
-              <label className="block text-sm font-medium text-gray-700">╨д╤А╨░╨╖╤Л ╨┤╨╗╤П ╤Б╨║╤А╤Л╤В╨╕╤П (╤З╨╡╤А╨╡╨╖ ╨╖╨░╨┐╤П╤В╤Г╤О)</label>
-              <input type="text" value={redactTexts} onChange={(e) => setRedactTexts(e.target.value)} placeholder="╨╜╨░╨┐╤А╨╕╨╝╨╡╤А: ╤Б╨╡╨║╤А╨╡╤В, ╨║╨╛╨╜╤Д╨╕╨┤╨╡╨╜╤Ж╨╕╨░╨╗╤М╨╜╨╛" className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-              <p className="mt-1 text-xs text-gray-500">╨Я╨╛╨╕╤Б╨║ ╤З╤Г╨▓╤Б╤В╨▓╨╕╤В╨╡╨╗╨╡╨╜ ╨║ ╤А╨╡╨│╨╕╤Б╤В╤А╤Г? ╨Ш╤Б╨┐╨╛╨╗╤М╨╖╤Г╨╡╤В ╤В╨╛╤З╨╜╤Л╨╣ ╨┐╨╛╨╕╤Б╨║. ╨Я╤Г╤Б╤В╨╛ = ╤В╨╛╨╗╤М╨║╨╛ ╨╕╨╖╨╛╨▒╤А╨░╨╢╨╡╨╜╨╕╤П.</p>
+              <label className="block text-sm font-medium text-gray-700">Фразы для скрытия (через запятую)</label>
+              <input type="text" value={redactTexts} onChange={(e) => setRedactTexts(e.target.value)} placeholder="например: секрет, конфиденциально" className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+              <p className="mt-1 text-xs text-gray-500">Поиск чувствителен к регистру? Использует точный поиск. Пусто = только изображения.</p>
             </div>
             <label className="flex items-center gap-2 text-sm font-medium text-[#1b1a17]">
               <input type="checkbox" checked={redactHideImages} onChange={(e) => setRedactHideImages(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#0a84ff] focus:ring-[#0a84ff]" />
-              ╨б╨║╤А╤Л╤В╤М ╨╕╨╖╨╛╨▒╤А╨░╨╢╨╡╨╜╨╕╤П (╨╖╨░╨║╤А╨░╤Б╨╕╤В╤М ╤З╤С╤А╨╜╤Л╨╝)
+              Скрыть изображения (закрасить чёрным)
             </label>
           </div>
         </div>
@@ -1827,53 +1827,53 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
       {slug === "sign" && (
         <div className="space-y-4">
           <div className="glass rounded-[16px] p-5 space-y-4">
-            <p className="text-[13px] font-medium text-[#1b1a17]">╨Я╨╛╨┤╨┐╨╕╤Б╨░╤В╤М PDF тАФ ╨╕╨╖╨╛╨▒╤А╨░╨╢╨╡╨╜╨╕╨╡ ╨┐╨╛╨┤╨┐╨╕╤Б╨╕</p>
-            <p className="text-xs text-[#6b6a63]">╨Ч╨░╨│╤А╤Г╨╖╨╕╤В╨╡ PNG/JPG ╨┐╨╛╨┤╨┐╨╕╤Б╨╕ ╨╕ ╨▓╤Л╨▒╨╡╤А╨╕╤В╨╡ ╨┐╨╛╨╗╨╛╨╢╨╡╨╜╨╕╨╡, ╤Б╤В╤А╨░╨╜╨╕╤Ж╤Г ╨╕ ╨┐╤А╨╛╨╖╤А╨░╤З╨╜╨╛╤Б╤В╤М.</p>
+            <p className="text-[13px] font-medium text-[#1b1a17]">Подписать PDF — изображение подписи</p>
+            <p className="text-xs text-[#6b6a63]">Загрузите PNG/JPG подписи и выберите положение, страницу и прозрачность.</p>
             <div>
-              <label className="block text-sm font-medium text-gray-700">╨Ш╨╖╨╛╨▒╤А╨░╨╢╨╡╨╜╨╕╨╡ ╨┐╨╛╨┤╨┐╨╕╤Б╨╕ (PNG/JPG) *</label>
+              <label className="block text-sm font-medium text-gray-700">Изображение подписи (PNG/JPG) *</label>
               <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" onChange={(e) => { const f = e.target.files?.[0] || null; setSignImage(f); }} className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm file:mr-3 file:rounded-full file:border-0 file:bg-[#0a84ff] file:px-3 file:py-1 file:text-xs file:font-medium file:text-white hover:file:bg-blue-600" />
-              {signImage && <div className="mt-2 flex items-center justify-between rounded-md bg-white/80 px-3 py-2 text-xs"><span className="truncate font-medium text-[#1b1a17]">{signImage.name}</span><button type="button" onClick={() => setSignImage(null)} className="ml-2 rounded-full border border-black/10 bg-white px-2 py-0.5 text-xs hover:bg-gray-50">╨г╨┤╨░╨╗╨╕╤В╤М</button></div>}
+              {signImage && <div className="mt-2 flex items-center justify-between rounded-md bg-white/80 px-3 py-2 text-xs"><span className="truncate font-medium text-[#1b1a17]">{signImage.name}</span><button type="button" onClick={() => setSignImage(null)} className="ml-2 rounded-full border border-black/10 bg-white px-2 py-0.5 text-xs hover:bg-gray-50">Удалить</button></div>}
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-gray-700">╨Я╨╛╨╗╨╛╨╢╨╡╨╜╨╕╨╡</label>
+                <label className="block text-sm font-medium text-gray-700">Положение</label>
                 <div className="mt-2">
                   <PositionGrid value={signPosition} onChange={setSignPosition} />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">╨б╤В╤А╨░╨╜╨╕╤Ж╨░</label>
-                <input type="text" value={signPage} onChange={(e) => setSignPage(e.target.value)} placeholder='all ╨╕╨╗╨╕ 1,2' className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                <label className="block text-sm font-medium text-gray-700">Страница</label>
+                <input type="text" value={signPage} onChange={(e) => setSignPage(e.target.value)} placeholder='all или 1,2' className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
               </div>
             </div>
             <div className="space-y-2">
-              <p className="text-xs font-medium text-[#1b1a17]">╨Я╤А╨╡╨▓╤М╤О {signPreview ? `${signPreview.numPages} ╤Б╤В╤А.` : ""} {signPreviewLoading ? "тАФ ╨╖╨░╨│╤А╤Г╨╖╨║╨░тАж" : ""}</p>
+              <p className="text-xs font-medium text-[#1b1a17]">Превью {signPreview ? `${signPreview.numPages} стр.` : ""} {signPreviewLoading ? "— загрузка…" : ""}</p>
               <LivePreview
                 thumb={signPreview?.pages[0]?.thumb ?? null}
-                label="╨Я╤А╨╡╨▓╤М╤О"
+                label="Превью"
                 overlay={
                   <div className={`flex h-full w-full p-4 ${positionToFlex(signPosition)}`}>
                     {signThumbUrl ? (
                       <img
                         src={signThumbUrl}
-                        alt="╨┐╨╛╨┤╨┐╨╕╤Б╤М"
+                        alt="подпись"
                         style={{ opacity: signOpacity / 100, maxWidth: "40%", maxHeight: "30%", objectFit: "contain" }}
                         draggable={false}
                       />
                     ) : (
-                      <span className="text-[11px] text-[#9a9994]">╨╖╨░╨│╤А╤Г╨╖╨╕╤В╨╡ ╨┐╨╛╨┤╨┐╨╕╤Б╤М ╨┤╨╗╤П ╨┐╤А╨╡╨▓╤М╤О</span>
+                      <span className="text-[11px] text-[#9a9994]">загрузите подпись для превью</span>
                     )}
                   </div>
                 }
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">╨Я╤А╨╛╨╖╤А╨░╤З╨╜╨╛╤Б╤В╤М: {signOpacity}%</label>
+              <label className="block text-sm font-medium text-gray-700">Прозрачность: {signOpacity}%</label>
               <input type="range" min={10} max={100} step={5} value={signOpacity} onChange={(e) => setSignOpacity(Number(e.target.value))} className="mt-2 w-full accent-[#0a84ff]" />
             </div>
             <details className="rounded-[12px] border border-white/60 bg-white/50 p-3">
-              <summary className="cursor-pointer text-sm font-medium text-[#1b1a17]">╨в╨╛╤З╨╜╤Л╨╡ ╨║╨╛╨╛╤А╨┤╨╕╨╜╨░╤В╤Л x,y,w,h (╨╛╨┐╤Ж╨╕╨╛╨╜╨░╨╗╤М╨╜╨╛)</summary>
-              <p className="mt-1 text-xs text-[#6b6a63]">╨Х╤Б╨╗╨╕ ╨╖╨░╨┐╨╛╨╗╨╜╨╡╨╜╤Л тАФ ╨┐╨╛╨╖╨╕╤Ж╨╕╤П ╨╕╨│╨╜╨╛╤А╨╕╤А╤Г╨╡╤В╤Б╤П, ╨╕╤Б╨┐╨╛╨╗╤М╨╖╤Г╨╡╤В╤Б╤П ╨┐╤А╤П╨╝╨╛╤Г╨│╨╛╨╗╤М╨╜╨╕╨║.</p>
+              <summary className="cursor-pointer text-sm font-medium text-[#1b1a17]">Точные координаты x,y,w,h (опционально)</summary>
+              <p className="mt-1 text-xs text-[#6b6a63]">Если заполнены — позиция игнорируется, используется прямоугольник.</p>
               <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <div><label className="block text-xs font-medium text-gray-700">X (pt)</label><input type="number" value={signX} onChange={(e) => setSignX(e.target.value)} className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" placeholder="20" /></div>
                 <div><label className="block text-xs font-medium text-gray-700">Y (pt)</label><input type="number" value={signY} onChange={(e) => setSignY(e.target.value)} className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" placeholder="20" /></div>
@@ -1888,30 +1888,30 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
       {slug === "compare" && compareResult && (
         <div className="space-y-4">
           <div className="glass rounded-[16px] p-4">
-            <p className="text-[13px] font-medium text-[#1b1a17]">╨а╨╡╨╖╤Г╨╗╤М╤В╨░╤В ╤Б╤А╨░╨▓╨╜╨╡╨╜╨╕╤П тАФ {compareResult.pages.length} ╤Б╤В╤А.</p>
-            <p className="text-xs text-[#6b6a63]">╨Ъ╤А╨░╤Б╨╜╨░╤П ╤А╨░╨╝╨║╨░ тАФ ╤А╨░╨╖╨╗╨╕╤З╨╕╤П ╨▓ ╤В╨╡╨║╤Б╤В╨╡. ╨б╨╡╤А╤Л╨╣ тАФ ╤Б╨╛╨▓╨┐╨░╨┤╨╡╨╜╨╕╨╡.</p>
+            <p className="text-[13px] font-medium text-[#1b1a17]">Результат сравнения — {compareResult.pages.length} стр.</p>
+            <p className="text-xs text-[#6b6a63]">Красная рамка — различия в тексте. Серый — совпадение.</p>
           </div>
           <div className="space-y-4">
             {compareResult.pages.map((pg) => (
               <div key={pg.index} className={`glass rounded-[16px] p-4 space-y-3 ${pg.diff ? "ring-2 ring-red-400/50 bg-red-50/40" : "ring-1 ring-emerald-200/50"}`}>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-[#1b1a17]">╨б╤В╤А. {pg.index + 1}</span>
-                  <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${pg.diff ? "bg-red-500 text-white" : "bg-emerald-500 text-white"}`}>{pg.diff ? "╤А╨░╨╖╨╗╨╕╤З╨░╨╡╤В╤Б╤П" : "╤Б╨╛╨▓╨┐╨░╨┤╨░╨╡╤В"}</span>
+                  <span className="text-xs font-semibold text-[#1b1a17]">Стр. {pg.index + 1}</span>
+                  <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${pg.diff ? "bg-red-500 text-white" : "bg-emerald-500 text-white"}`}>{pg.diff ? "различается" : "совпадает"}</span>
                 </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
-                    <p className="text-xs font-medium text-[#6b6a63]">╨б╨╗╨╡╨▓╨░</p>
+                    <p className="text-xs font-medium text-[#6b6a63]">Слева</p>
                     <div className="overflow-hidden rounded-[12px] border border-white/60 bg-white">
-                      {pg.left_thumb ? <img src={pg.left_thumb} alt={`left ${pg.index+1}`} className="w-full object-contain" /> : <div className="flex h-32 items-center justify-center text-xs text-[#9a9994]">╨╜╨╡╤В ╤Б╤В╤А╨░╨╜╨╕╤Ж╤Л</div>}
+                      {pg.left_thumb ? <img src={pg.left_thumb} alt={`left ${pg.index+1}`} className="w-full object-contain" /> : <div className="flex h-32 items-center justify-center text-xs text-[#9a9994]">нет страницы</div>}
                     </div>
-                    <div className="rounded-[8px] bg-white/70 p-2 text-xs leading-relaxed text-[#1b1a17] max-h-32 overflow-auto whitespace-pre-wrap">{pg.left_text?.slice(0,800) || "тАФ ╨┐╤Г╤Б╤В╨╛ тАФ"}</div>
+                    <div className="rounded-[8px] bg-white/70 p-2 text-xs leading-relaxed text-[#1b1a17] max-h-32 overflow-auto whitespace-pre-wrap">{pg.left_text?.slice(0,800) || "— пусто —"}</div>
                   </div>
                   <div className="space-y-2">
-                    <p className="text-xs font-medium text-[#6b6a63]">╨б╨┐╤А╨░╨▓╨░</p>
+                    <p className="text-xs font-medium text-[#6b6a63]">Справа</p>
                     <div className="overflow-hidden rounded-[12px] border border-white/60 bg-white">
-                      {pg.right_thumb ? <img src={pg.right_thumb} alt={`right ${pg.index+1}`} className="w-full object-contain" /> : <div className="flex h-32 items-center justify-center text-xs text-[#9a9994]">╨╜╨╡╤В ╤Б╤В╤А╨░╨╜╨╕╤Ж╤Л</div>}
+                      {pg.right_thumb ? <img src={pg.right_thumb} alt={`right ${pg.index+1}`} className="w-full object-contain" /> : <div className="flex h-32 items-center justify-center text-xs text-[#9a9994]">нет страницы</div>}
                     </div>
-                    <div className="rounded-[8px] bg-white/70 p-2 text-xs leading-relaxed text-[#1b1a17] max-h-32 overflow-auto whitespace-pre-wrap">{pg.right_text?.slice(0,800) || "тАФ ╨┐╤Г╤Б╤В╨╛ тАФ"}</div>
+                    <div className="rounded-[8px] bg-white/70 p-2 text-xs leading-relaxed text-[#1b1a17] max-h-32 overflow-auto whitespace-pre-wrap">{pg.right_text?.slice(0,800) || "— пусто —"}</div>
                   </div>
                 </div>
               </div>
@@ -1923,18 +1923,18 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
       {slug === "page-numbers" && (
         <div className="space-y-4">
           <div className="glass rounded-[16px] p-5 space-y-4">
-            <p className="text-[13px] font-medium text-[#1b1a17]">╨Э╨╛╨╝╨╡╤А╨░ ╤Б╤В╤А╨░╨╜╨╕╤Ж тАФ ╨┐╨╛╨╗╨╛╨╢╨╡╨╜╨╕╨╡ ╨╕ ╤Б╤В╨╕╨╗╤М</p>
-            <p className="text-xs text-[#6b6a63]">╨Ы╨╡╨│╨║╨╛ ╨┤╨╛╨▒╨░╨▓╨╗╤П╨╣╤В╨╡ ╨╜╨╛╨╝╨╡╤А╨░ ╤Б╤В╤А╨░╨╜╨╕╤Ж ╨▓ PDF ╨┤╨╛╨║╤Г╨╝╨╡╨╜╤В╤Л. ╨Т╤Л╨▒╨╡╤А╨╕╤В╨╡ ╨┐╨╛╨╗╨╛╨╢╨╡╨╜╨╕╨╡, ╤А╨░╨╖╨╝╨╡╤А╤Л, ╤Д╨╛╤А╨╝╨░╤В ╨╕ ╤И╤А╨╕╤Д╤В!</p>
+            <p className="text-[13px] font-medium text-[#1b1a17]">Номера страниц — положение и стиль</p>
+            <p className="text-xs text-[#6b6a63]">Легко добавляйте номера страниц в PDF документы. Выберите положение, размеры, формат и шрифт!</p>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-gray-700">╨Я╨╛╨╗╨╛╨╢╨╡╨╜╨╕╨╡</label>
+                <label className="block text-sm font-medium text-gray-700">Положение</label>
                 <div className="mt-2">
                   <PositionGrid value={pnPosition} onChange={setPnPosition} />
                 </div>
               </div>
               <div>
-                <label htmlFor="pnFormat" className="block text-sm font-medium text-gray-700">╨д╨╛╤А╨╝╨░╤В</label>
+                <label htmlFor="pnFormat" className="block text-sm font-medium text-gray-700">Формат</label>
                 <select
                   id="pnFormat"
                   value={pnFormat}
@@ -1950,10 +1950,10 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
             </div>
 
             <div className="space-y-2">
-              <p className="text-xs font-medium text-[#1b1a17]">╨Я╤А╨╡╨▓╤М╤О Live {pnPreview ? `${pnPreview.numPages} ╤Б╤В╤А.` : ""} {pnPreviewLoading ? "тАФ ╨╖╨░╨│╤А╤Г╨╖╨║╨░тАж" : ""}</p>
+              <p className="text-xs font-medium text-[#1b1a17]">Превью Live {pnPreview ? `${pnPreview.numPages} стр.` : ""} {pnPreviewLoading ? "— загрузка…" : ""}</p>
               <LivePreview
                 thumb={pnPreview?.pages[0]?.thumb ?? null}
-                label="╨Я╤А╨╡╨▓╤М╤О"
+                label="Превью"
                 overlay={
                   <div className={`flex h-full w-full p-4 ${positionToFlex(pnPosition)}`}>
                     <span style={{ color: pnColor, fontSize: `${pnFontSize}px` }}>
@@ -1974,7 +1974,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label htmlFor="pnFontSize" className="block text-sm font-medium text-gray-700">╨а╨░╨╖╨╝╨╡╤А ╤И╤А╨╕╤Д╤В╨░</label>
+                <label htmlFor="pnFontSize" className="block text-sm font-medium text-gray-700">Размер шрифта</label>
                 <select
                   id="pnFontSize"
                   value={pnFontSize}
@@ -1992,7 +1992,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
                 </select>
               </div>
               <div>
-                <label htmlFor="pnStart" className="block text-sm font-medium text-gray-700">╨Э╨░╤З╨░╨╗╤М╨╜╤Л╨╣ ╨╜╨╛╨╝╨╡╤А</label>
+                <label htmlFor="pnStart" className="block text-sm font-medium text-gray-700">Начальный номер</label>
                 <input
                   id="pnStart"
                   type="number"
@@ -2007,7 +2007,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label htmlFor="pnColor" className="block text-sm font-medium text-gray-700">╨ж╨▓╨╡╤В</label>
+                <label htmlFor="pnColor" className="block text-sm font-medium text-gray-700">Цвет</label>
                 <div className="mt-1 flex items-center gap-2">
                   <input
                     id="pnColor"
@@ -2026,7 +2026,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
                 </div>
               </div>
               <div>
-                <label htmlFor="pnMarginX" className="block text-sm font-medium text-gray-700">╨Ю╤В╤Б╤В╤Г╨┐ X (px)</label>
+                <label htmlFor="pnMarginX" className="block text-sm font-medium text-gray-700">Отступ X (px)</label>
                 <input
                   id="pnMarginX"
                   type="number"
@@ -2041,7 +2041,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label htmlFor="pnMarginY" className="block text-sm font-medium text-gray-700">╨Ю╤В╤Б╤В╤Г╨┐ Y (px)</label>
+                <label htmlFor="pnMarginY" className="block text-sm font-medium text-gray-700">Отступ Y (px)</label>
                 <input
                   id="pnMarginY"
                   type="number"
@@ -2057,7 +2057,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
             {/* live preview thumbnails */}
             {files.length > 0 && (
               <div className="space-y-2">
-                <p className="text-xs font-medium text-[#1b1a17]">╨Я╤А╨╡╨▓╤М╤О {pnPreview ? `${pnPreview.numPages} ╤Б╤В╤А.` : ""} {pnPreviewLoading ? "тАФ ╨╖╨░╨│╤А╤Г╨╖╨║╨░тАж" : ""}</p>
+                <p className="text-xs font-medium text-[#1b1a17]">Превью {pnPreview ? `${pnPreview.numPages} стр.` : ""} {pnPreviewLoading ? "— загрузка…" : ""}</p>
                 {pnPreviewLoading ? (
                   <div className="grid grid-cols-3 gap-2">
                     {Array.from({ length: 3 }).map((_, i) => (
@@ -2070,7 +2070,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
                   <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
                     {pnPreview.pages.slice(0, 8).map((p) => (
                       <div key={p.page} className="relative overflow-hidden rounded-[12px] border border-white/60 bg-white">
-                        <img src={p.thumb} alt={`╤Б╤В╤А ${p.page + 1}`} className="aspect-[3/4] w-full object-cover object-top" />
+                        <img src={p.thumb} alt={`стр ${p.page + 1}`} className="aspect-[3/4] w-full object-cover object-top" />
                         <span className="absolute bottom-1 left-1 rounded-full bg-black/70 px-1.5 py-0.5 text-[9px] font-medium text-white">
                           {(() => {
                             const num = Number(pnStart) + p.page;
@@ -2085,9 +2085,9 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-[12px] border border-dashed border-black/10 bg-white/50 p-4 text-center text-xs text-[#6b6a63]">╨Я╤А╨╡╨▓╤М╤О ╨╜╨╡╨┤╨╛╤Б╤В╤Г╨┐╨╜╨╛</div>
+                  <div className="rounded-[12px] border border-dashed border-black/10 bg-white/50 p-4 text-center text-xs text-[#6b6a63]">Превью недоступно</div>
                 )}
-                <p className="text-[11px] text-[#6b6a63]">╨Я╤А╨╕╨╝╨╡╤А ╨╛╤В╨╛╨▒╤А╨░╨╢╨╡╨╜╨╕╤П ╤Д╨╛╤А╨╝╨░╤В╨░ ┬л{pnFormat}┬╗ ╨▓ ╨┐╨╛╨╖╨╕╤Ж╨╕╨╕ ┬л{pnPosition}┬╗.</p>
+                <p className="text-[11px] text-[#6b6a63]">Пример отображения формата «{pnFormat}» в позиции «{pnPosition}».</p>
               </div>
             )}
           </div>
@@ -2097,8 +2097,8 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
       {slug === "pdf-to-jpg" && (
         <div className="space-y-4">
           <div className="glass rounded-[16px] p-5 space-y-4">
-            <p className="text-[13px] font-medium text-[#1b1a17]">PDF тЖТ JPG тАФ ╨╜╨░╤Б╤В╤А╨╛╨╣╨║╨╕</p>
-            <p className="text-xs text-[#6b6a63]">╨Т╤Л╨▒╨╡╤А╨╕╤В╨╡ ╨║╨░╤З╨╡╤Б╤В╨▓╨╛ ╨╕╨╖╨╛╨▒╤А╨░╨╢╨╡╨╜╨╕╨╣ (DPI). ╨Т╤Л╤И╨╡ DPI тАФ ╤З╤С╤В╤З╨╡, ╨╜╨╛ ╨▒╨╛╨╗╤М╤И╨╡ ╤А╨░╨╖╨╝╨╡╤А ╨░╤А╤Е╨╕╨▓╨░.</p>
+            <p className="text-[13px] font-medium text-[#1b1a17]">PDF → JPG — настройки</p>
+            <p className="text-xs text-[#6b6a63]">Выберите качество изображений (DPI). Выше DPI — чётче, но больше размер архива.</p>
             <div>
               <label htmlFor="pdfToJpgDpi" className="block text-sm font-medium text-gray-700">DPI</label>
               <select
@@ -2107,9 +2107,9 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
                 onChange={(e) => setPdfToJpgDpi(e.target.value)}
                 className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
-                <option value="72">72 DPI (╨▒╤Л╤Б╤В╤А╨╛, ╨╝╨╡╨╜╤М╤И╨╡ ╤Д╨░╨╣╨╗)</option>
-                <option value="150">150 DPI (╤А╨╡╨║╨╛╨╝╨╡╨╜╨┤╤Г╨╡╨╝╨╛╨╡)</option>
-                <option value="300">300 DPI (╨▓╤Л╤Б╨╛╨║╨╛╨╡ ╨║╨░╤З╨╡╤Б╤В╨▓╨╛)</option>
+                <option value="72">72 DPI (быстро, меньше файл)</option>
+                <option value="150">150 DPI (рекомендуемое)</option>
+                <option value="300">300 DPI (высокое качество)</option>
               </select>
             </div>
           </div>
@@ -2119,23 +2119,23 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
       {slug === "jpg-to-pdf" && (
         <div className="space-y-4">
           <div className="glass rounded-[16px] p-5 space-y-4">
-            <p className="text-[13px] font-medium text-[#1b1a17]">JPG тЖТ PDF тАФ ╨╜╨░╤Б╤В╤А╨╛╨╣╨║╨╕</p>
-            <p className="text-xs text-[#6b6a63]">╨Т╤Л╨▒╨╡╤А╨╕╤В╨╡ ╨╛╤А╨╕╨╡╨╜╤В╨░╤Ж╨╕╤О, ╤А╨░╨╖╨╝╨╡╤А ╤Б╤В╤А╨░╨╜╨╕╤Ж╤Л ╨╕ ╨┐╨╛╨╗╤П.</p>
+            <p className="text-[13px] font-medium text-[#1b1a17]">JPG → PDF — настройки</p>
+            <p className="text-xs text-[#6b6a63]">Выберите ориентацию, размер страницы и поля.</p>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label htmlFor="jpgToPdfOrientation" className="block text-sm font-medium text-gray-700">╨Ю╤А╨╕╨╡╨╜╤В╨░╤Ж╨╕╤П</label>
+                <label htmlFor="jpgToPdfOrientation" className="block text-sm font-medium text-gray-700">Ориентация</label>
                 <select
                   id="jpgToPdfOrientation"
                   value={jpgToPdfOrientation}
                   onChange={(e) => setJpgToPdfOrientation(e.target.value)}
                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 >
-                  <option value="portrait">╨Ъ╨╜╨╕╨╢╨╜╨░╤П (portrait)</option>
-                  <option value="landscape">╨Р╨╗╤М╨▒╨╛╨╝╨╜╨░╤П (landscape)</option>
+                  <option value="portrait">Книжная (portrait)</option>
+                  <option value="landscape">Альбомная (landscape)</option>
                 </select>
               </div>
               <div>
-                <label htmlFor="jpgToPdfPageSize" className="block text-sm font-medium text-gray-700">╨а╨░╨╖╨╝╨╡╤А ╤Б╤В╤А╨░╨╜╨╕╤Ж╤Л</label>
+                <label htmlFor="jpgToPdfPageSize" className="block text-sm font-medium text-gray-700">Размер страницы</label>
                 <select
                   id="jpgToPdfPageSize"
                   value={jpgToPdfPageSize}
@@ -2145,22 +2145,22 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
                   <option value="A4">A4</option>
                   <option value="A3">A3</option>
                   <option value="Letter">Letter</option>
-                  <option value="fit">╨Я╨╛ ╤А╨░╨╖╨╝╨╡╤А╤Г ╨╕╨╖╨╛╨▒╤А╨░╨╢╨╡╨╜╨╕╤П (fit)</option>
+                  <option value="fit">По размеру изображения (fit)</option>
                 </select>
               </div>
             </div>
             <div>
-              <label htmlFor="jpgToPdfMargin" className="block text-sm font-medium text-gray-700">╨Я╨╛╨╗╤П</label>
+              <label htmlFor="jpgToPdfMargin" className="block text-sm font-medium text-gray-700">Поля</label>
               <select
                 id="jpgToPdfMargin"
                 value={jpgToPdfMargin}
                 onChange={(e) => setJpgToPdfMargin(e.target.value)}
                 className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
-                <option value="none">╨С╨╡╨╖ ╨┐╨╛╨╗╨╡╨╣</option>
-                <option value="small">╨Ь╨░╨╗╨╡╨╜╤М╨║╨╕╨╡</option>
-                <option value="medium">╨б╤А╨╡╨┤╨╜╨╕╨╡</option>
-                <option value="large">╨С╨╛╨╗╤М╤И╨╕╨╡</option>
+                <option value="none">Без полей</option>
+                <option value="small">Маленькие</option>
+                <option value="medium">Средние</option>
+                <option value="large">Большие</option>
               </select>
             </div>
           </div>
@@ -2177,7 +2177,7 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
         onProcess={handleProcess}
         loading={slug === "compare" ? compareLoading : loading}
         disabled={slug === "compare" ? !compareFile1 || !compareFile2 : files.length === 0 || (slug === "merge" && pagesLoading)}
-        label={slug === "compare" ? "╨б╤А╨░╨▓╨╜╨╕╤В╤М" : "╨Ю╨▒╤А╨░╨▒╨╛╤В╨░╤В╤М"}
+        label={slug === "compare" ? "Сравнить" : "Обработать"}
       />
 
       {/* Error toast */}
@@ -2190,15 +2190,15 @@ export default function ToolPage({ params }: { params: { slug: string, locale: s
       {/* Download block */}
       {downloadUrl && (
         <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-4">
-          <p className="text-sm font-medium text-green-800">╨У╨╛╤В╨╛╨▓╨╛ тАФ ╤Д╨░╨╣╨╗ ╨┤╨╛╤Б╤В╤Г╨┐╨╡╨╜ ╨┤╨╗╤П ╤Б╨║╨░╤З╨╕╨▓╨░╨╜╨╕╤П</p>
+          <p className="text-sm font-medium text-green-800">Готово — файл доступен для скачивания</p>
           <button
             type="button"
             onClick={handleDownload}
             className="mt-3 rounded-lg bg-green-600 px-6 py-2 text-sm font-semibold text-white hover:bg-green-700"
           >
-            ╨б╨║╨░╤З╨░╤В╤М {downloadName}
+            Скачать {downloadName}
           </button>
-          <p className="mt-2 text-xs text-green-700">╨б╤Б╤Л╨╗╨║╨░ ╨▒╤Г╨┤╨╡╤В ╨╛╤В╨╛╨╖╨▓╨░╨╜╨░ ╨┐╨╛╤Б╨╗╨╡ ╨║╨╗╨╕╨║╨░ (blob URL).</p>
+          <p className="mt-2 text-xs text-green-700">Ссылка будет отозвана после клика (blob URL).</p>
         </div>
       )}
     </div>
