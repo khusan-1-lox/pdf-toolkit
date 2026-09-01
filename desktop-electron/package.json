@@ -15,8 +15,8 @@
     "win": { "target": "nsis", "icon": "icon.ico" },
     "nsis": { "oneClick": true, "perMachine": false },
     "extraResources": [
-      { "from": "../pdf-toolkit/backend", "to": "backend" },
-      { "from": "../pdf-toolkit/frontend", "to": "frontend" }
+      { "from": "../backend", "to": "backend" },
+      { "from": "../frontend", "to": "frontend" }
     ]
   },
   "devDependencies": {

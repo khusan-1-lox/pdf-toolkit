@@ -4,6 +4,7 @@
 
 <h1 align="center">PDF Toolkit</h1>
 <p align="center"><b>25 Tools · Local · Private · Free MCP for AI Agents</b></p>
+<p align="center">🌐 Languages: <a href="frontend/messages/en.json">EN</a> | <a href="frontend/messages/ru.json">RU</a> — Web served at <code>/en</code> and <code>/ru</code> (default <code>en</code>, auto-detect)</p>
 
 <p align="center">
   <a href="https://github.com/khusan-1-lox/pdf-toolkit/releases/tag/v1.0.0-beta.1"><img src="https://img.shields.io/github/v/release/khusan-1-lox/pdf-toolkit?label=beta&color=amber" alt="beta"/></a>
@@ -39,7 +40,7 @@
 
 ### 🖥️ Software
 
-**Web** — `docker compose up --build` → http://localhost:3000  
+**Web** — `docker compose up --build` → http://localhost:3000/en (or /ru, auto-redirect)  
 **Desktop** — `PDF Toolkit BETA` (Electron, Windows) — offline, 25 tools without browser. Download: [Release v1.0.0-beta.1](https://github.com/khusan-1-lox/pdf-toolkit/releases/tag/v1.0.0-beta.1)
 
 <p align="center">
