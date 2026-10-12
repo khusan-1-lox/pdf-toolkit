@@ -21,6 +21,17 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Prepare Embedded Python Runtime (.venv-test)
+        run: |
+          python -m venv .venv-test
+          .\.venv-test\Scripts\python.exe -m pip install --upgrade pip
+          .\.venv-test\Scripts\pip.exe install -r backend/requirements.txt
+
       - name: Build Next.js Frontend (standalone)
         working-directory: frontend
         run: |
@@ -41,6 +52,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
+          body_path: RELEASE_NOTES_v1.1.0.md
           files: |
             desktop-electron/dist/PDF-Toolkit-Setup-*.exe
             desktop-electron/dist/PDF-Toolkit-Portable-*.exe
