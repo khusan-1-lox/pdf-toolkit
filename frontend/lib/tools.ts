@@ -1,0 +1,45 @@
+export type LocalText = { ru: string; en: string };
+export type Tool = { slug: string; category: string; title: LocalText; description: LocalText; icon: string; color: string; popular?: boolean };
+export const CATEGORIES = [
+  { id: "all", title: { ru: "Все инструменты", en: "All tools" }, icon: "grid" },
+  { id: "organize", title: { ru: "Страницы", en: "Organize" }, icon: "layers" },
+  { id: "optimize", title: { ru: "Оптимизация", en: "Optimize" }, icon: "bolt" },
+  { id: "convert", title: { ru: "Конвертация", en: "Convert" }, icon: "rotate" },
+  { id: "edit", title: { ru: "Редактирование", en: "Edit" }, icon: "pen" },
+  { id: "security", title: { ru: "Защита", en: "Security" }, icon: "shield" },
+];
+const tool = (slug: string, category: string, icon: string, color: string, ru: string, en: string, ruDesc: string, enDesc: string, popular = false): Tool => ({ slug, category, icon, color, title: { ru, en }, description: { ru: ruDesc, en: enDesc }, popular });
+export const TOOLS: Tool[] = [
+  tool("merge", "organize", "merge", "violet", "Объединить PDF", "Merge PDF", "Соберите несколько документов в один. В нужном порядке.", "Bring your documents together. In just the right order.", true),
+  tool("split", "organize", "split", "rose", "Разделить PDF", "Split PDF", "Разделите документ на отдельные страницы.", "Split your document into individual pages.", true),
+  tool("compress", "optimize", "compress", "green", "Сжать PDF", "Compress PDF", "Меньше размер. Больше места для важного.", "Smaller files. More room for what matters.", true),
+  tool("pdf-to-word", "convert", "word", "blue", "PDF в Word", "PDF to Word", "Превратите PDF в документ, который можно редактировать.", "Turn a PDF into an editable Word document.", true),
+  tool("edit-pdf", "edit", "pen", "amber", "Редактор PDF", "Edit PDF", "Добавляйте текст, изображения, фигуры и рисунки.", "Add text, images, shapes and your own drawings."),
+  tool("jpg-to-pdf", "convert", "image", "amber", "Изображения в PDF", "Images to PDF", "Соберите JPG, PNG и другие изображения в документ.", "Make a document from your JPG, PNG and other images."),
+  tool("pdf-to-jpg", "convert", "image", "rose", "PDF в JPG", "PDF to JPG", "Сохраните страницы документа как изображения.", "Save the pages of your document as images."),
+  tool("sign", "security", "pen", "violet", "Подписать PDF", "Sign PDF", "Нарисуйте или загрузите свою подпись.", "Draw or upload your signature and place it on a PDF."),
+  tool("organize-pdf", "organize", "organize", "violet", "Организовать PDF", "Organize PDF", "Меняйте порядок, добавляйте, поворачивайте и удаляйте страницы.", "Reorder, add, rotate and remove pages."),
+  tool("extract-pages", "organize", "extract", "blue", "Извлечь страницы", "Extract pages", "Сохраните выбранные страницы в отдельный PDF.", "Save the pages you need in a separate PDF."),
+  tool("delete", "organize", "trash", "rose", "Удалить страницы", "Remove pages", "Уберите лишнее. Оставьте только нужные страницы.", "Leave out the extra pages. Keep what you need."),
+  tool("rotate", "organize", "rotate", "violet", "Повернуть PDF", "Rotate PDF", "Исправьте ориентацию страниц одним движением.", "Get every page facing the right way."),
+  tool("word-to-pdf", "convert", "word", "blue", "Word в PDF", "Word to PDF", "Преобразуйте DOC и DOCX в удобный для отправки PDF.", "Make a shareable PDF from a DOC or DOCX document."),
+  tool("excel-to-pdf", "convert", "sheet", "green", "Excel в PDF", "Excel to PDF", "Превратите таблицы Excel в PDF-документ.", "Turn Excel spreadsheets into a PDF document."),
+  tool("pdf-to-excel", "convert", "sheet", "green", "PDF в Excel", "PDF to Excel", "Извлеките таблицы и данные для дальнейшей работы.", "Extract tables and data to keep working with them."),
+  tool("ppt-to-pdf", "convert", "slides", "amber", "PowerPoint в PDF", "PowerPoint to PDF", "Поделитесь презентацией в универсальном формате.", "Share a presentation in a format everyone can open."),
+  tool("pdf-to-ppt", "convert", "slides", "amber", "PDF в PowerPoint", "PDF to PowerPoint", "Поместите каждую страницу PDF на слайд презентации.", "Place each PDF page on a presentation slide."),
+  tool("html-to-pdf", "convert", "code", "blue", "HTML в PDF", "HTML to PDF", "Сохраните HTML-файл, код или веб-страницу в PDF.", "Save an HTML file, code or web page as a PDF."),
+  tool("pdf-to-markdown", "convert", "markdown", "slate", "PDF в Markdown", "PDF to Markdown", "Получите текст с заголовками для заметок и документации.", "Get structured text for notes and documentation."),
+  tool("pdf-to-pdfa", "convert", "archive", "violet", "PDF в PDF/A", "PDF to PDF/A", "Подготовьте документ для длительного хранения.", "Prepare your document for long-term archiving."),
+  tool("watermark", "edit", "watermark", "blue", "Водяной знак", "Watermark", "Добавьте свой текст или логотип на страницы.", "Add your own text or logo to the pages."),
+  tool("page-numbers", "edit", "numbers", "violet", "Номера страниц", "Page numbers", "Добавьте аккуратную нумерацию в нужном месте.", "Add neat page numbers just where you want them."),
+  tool("crop", "edit", "crop", "amber", "Обрезать PDF", "Crop PDF", "Уберите широкие поля и выделите нужную область.", "Trim wide margins and focus on what matters."),
+  tool("pdf-forms", "edit", "form", "blue", "PDF-формы", "PDF forms", "Заполняйте формы и добавляйте интерактивные поля.", "Fill forms and add interactive fields to your PDF."),
+  tool("ocr-pdf", "optimize", "ocr", "green", "Распознать текст", "OCR PDF", "Сделайте текст на сканах доступным для поиска.", "Make the text in scanned pages searchable."),
+  tool("repair-pdf", "optimize", "repair", "amber", "Восстановить PDF", "Repair PDF", "Попробуйте восстановить повреждённый документ.", "Try to recover a damaged PDF document."),
+  tool("scan-to-pdf", "organize", "scan", "green", "Сканировать в PDF", "Scan to PDF", "Снимите документ на телефон или загрузите фото.", "Capture a document on your phone or upload photos."),
+  tool("protect", "security", "lock", "rose", "Защитить PDF", "Protect PDF", "Добавьте пароль для открытия вашего документа.", "Add a password to keep your document private."),
+  tool("unlock", "security", "unlock", "green", "Разблокировать PDF", "Unlock PDF", "Введите пароль и сохраните копию без защиты.", "Enter the password and save an unlocked copy."),
+  tool("redact", "security", "redact", "slate", "Скрыть данные", "Redact PDF", "Удалите конфиденциальный текст и изображения.", "Permanently remove sensitive text and images."),
+  tool("compare", "edit", "compare", "violet", "Сравнить PDF", "Compare PDF", "Посмотрите два документа рядом и найдите изменения.", "View two documents side by side and find changes."),
+];
+export const getTool = (slug: string) => TOOLS.find(t => t.slug === slug) || (slug === "workflows" ? tool("workflows", "organize", "workflow", "violet", "Цепочки действий", "Workflows", "Применяйте несколько действий к документу за один раз.", "Run multiple actions on your document in one go.") : undefined);

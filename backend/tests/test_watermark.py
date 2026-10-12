@@ -99,3 +99,30 @@ def test_watermark_invalid_position(client):
         data={"text": "hi", "position": "invalid"},
     )
     assert r.status_code == 400
+
+def test_watermark_default_angle_cyrillic_is_visible(client):
+    import fitz
+    response = client.post("/api/watermark",
+        files={"file": ("x.pdf", make_pdf(), "application/pdf")},
+        data={"text": "Копия", "color": "#FF0000", "opacity": "0.5"})
+    assert response.status_code == 200, response.text
+    with fitz.open(stream=response.content, filetype="pdf") as doc:
+        assert "Копия" in doc[0].get_text()
+        pix = doc[0].get_pixmap()
+        assert min(pix.samples) < 240
+        span = doc[0].get_texttrace()[0]
+        assert abs(span["dir"][0]) > 0.5 and abs(span["dir"][1]) > 0.5
+        assert abs(span["opacity"] - 0.5) < 0.01
+
+
+def test_watermark_corner_stays_on_page(client):
+    import fitz
+    response = client.post("/api/watermark",
+        files={"file": ("x.pdf", make_pdf(), "application/pdf")},
+        data={"text": "DRAFT", "position": "top-right", "rotation": "33", "color": "#000000"})
+    assert response.status_code == 200
+    with fitz.open(stream=response.content, filetype="pdf") as doc:
+        assert "DRAFT" in doc[0].get_text()
+        for word in doc[0].get_text("words"):
+            assert word[0] >= 0 and word[1] >= 0
+            assert word[2] <= 200 and word[3] <= 200

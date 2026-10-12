@@ -1,0 +1,49 @@
+name: Build & Publish Windows Installer (.exe)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build Next.js Frontend (standalone)
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build Windows Installer (.exe)
+        working-directory: desktop-electron
+        run: |
+          npm install
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));delete p.build.electronDist;p.devDependencies.electron='^35.0.0';delete p.build.electronVersion;fs.writeFileSync('package.json',JSON.stringify(p,null,2));"
+          npm install
+          npm run build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Installer to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            desktop-electron/dist/PDF-Toolkit-Setup-*.exe
+            desktop-electron/dist/PDF-Toolkit-Portable-*.exe
+            desktop-electron/dist/latest.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

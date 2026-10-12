@@ -46,7 +46,7 @@ async def rotate_pdf(
     background_tasks: BackgroundTasks,
     angle: str = Form(...),
     file: UploadFile | None = File(default=None),
-    files: list[UploadFile] | None = File(default=None),
+    files: list[UploadFile] = File(default=[]),
 ):
     # validate angle
     try:

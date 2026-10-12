@@ -37,7 +37,7 @@ def schedule_delete(path: str):
 @router.post("/api/merge")
 async def merge(
     background_tasks: BackgroundTasks,
-    files: list[UploadFile] | None = File(default=None),
+    files: list[UploadFile] = File(default=[]),
     order: str | None = Form(default=None),
 ):
     if not files:

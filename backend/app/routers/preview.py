@@ -1,89 +1,47 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
+import asyncio
 import base64
+
+import fitz
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from ..config import MAX_FILE_SIZE
 
 router = APIRouter()
 
 
-@router.post("/api/preview")
-async def preview(file: UploadFile = File(...)):
-    data = await file.read()
-    if len(data) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=413, detail="File too large")
-    if len(data) == 0:
-        raise HTTPException(status_code=400, detail="Empty file")
-
-    # basic PDF magic check - allow but will fail gracefully
-    # If not PDF, return 400
-    # Use PyMuPDF to render thumbnails
+def render_preview(data: bytes, offset: int, limit: int):
     try:
-        import pymupdf as fitz  # type: ignore
-    except ImportError:
-        try:
-            import fitz  # type: ignore  # PyMuPDF alias (deprecated)
-        except ImportError:
-            fitz = None  # type: ignore
-
-    if fitz is None:
-        # fallback: no renderer available -> return empty pages (frontend will show placeholders)
-        return {"pages": [], "numPages": 0}
-
-    try:
-        doc = fitz.open(stream=data, filetype="pdf")
-    except Exception as e:
-        msg = str(e).lower()
-        if "password" in msg or "encrypt" in msg:
-            raise HTTPException(status_code=400, detail="Encrypted PDF not supported")
-        raise HTTPException(status_code=400, detail=f"Invalid PDF: {e}")
-
-    try:
-        n = len(doc)
-        if n == 0:
-            doc.close()
-            raise HTTPException(status_code=400, detail="PDF has no pages")
-        # limit pages to avoid DoS - max 50 pages for preview
-        max_preview = 50
-        if n > max_preview:
-            # still return first 50; frontend handles pagination if needed
-            n_render = max_preview
-        else:
-            n_render = n
-
-        pages = []
-        mat = fitz.Matrix(0.4, 0.4)
-        for i in range(n_render):
-            page = doc.load_page(i)
-            try:
-                pix = page.get_pixmap(matrix=mat, alpha=False)
-            except Exception:
-                # fallback try without matrix
-                pix = page.get_pixmap(alpha=False)
-            # try JPEG first (smaller), fallback to PNG
-            thumb_b64 = None
-            try:
-                # tobytes("jpg", jpg_quality=60) is valid for recent pymupdf
-                jpg_bytes = pix.tobytes("jpg", jpg_quality=60)
-                thumb_b64 = "data:image/jpeg;base64," + base64.b64encode(jpg_bytes).decode()
-            except Exception:
-                try:
-                    png_bytes = pix.tobytes("png")
-                    thumb_b64 = "data:image/png;base64," + base64.b64encode(png_bytes).decode()
-                except Exception:
-                    # last resort: use samples -> PNG via Pillow if available
-                    thumb_b64 = None
-            if thumb_b64:
-                pages.append({"page": i, "thumb": thumb_b64})
-            else:
-                pages.append({"page": i, "thumb": ""})
-
-        doc.close()
-        return {"pages": pages, "numPages": n}
+        with fitz.open(stream=data, filetype="pdf") as doc:
+            if doc.needs_pass:
+                raise HTTPException(400, "Encrypted PDF not supported")
+            count = len(doc)
+            if not count:
+                raise HTTPException(400, "PDF has no pages")
+            pages = []
+            for index in range(offset, min(offset + limit, count)):
+                page = doc[index]
+                scale = min(0.4, 500 / max(page.rect.width, page.rect.height))
+                pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
+                encoded = base64.b64encode(pix.tobytes("jpg", jpg_quality=65)).decode()
+                pages.append({"page": index, "thumb": "data:image/jpeg;base64," + encoded,
+                              "width": page.rect.width, "height": page.rect.height})
+            return {"pages": pages, "numPages": count, "offset": offset,
+                    "hasMore": offset + len(pages) < count}
     except HTTPException:
         raise
-    except Exception as e:
-        try:
-            doc.close()
-        except Exception:
-            pass
-        raise HTTPException(status_code=400, detail=f"Preview failed: {e}")
+    except Exception as exc:
+        raise HTTPException(400, f"Invalid PDF: {exc}") from exc
+
+
+@router.post("/api/preview")
+async def preview(
+    file: UploadFile = File(...),
+    offset: int = Form(default=0, ge=0),
+    limit: int = Form(default=50, ge=1, le=50),
+):
+    data = await file.read()
+    if len(data) > MAX_FILE_SIZE:
+        raise HTTPException(413, "File too large")
+    if not data:
+        raise HTTPException(400, "Empty file")
+    return await asyncio.to_thread(render_preview, data, offset, limit)

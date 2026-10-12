@@ -1,7 +1,7 @@
 import io
 
 def make_pdf_with_text(text="Hello secret world"):
-    import pymupdf
+    import fitz as pymupdf
     doc = pymupdf.open()
     page = doc.new_page(width=200, height=200)
     page.insert_text((20, 50), text)
@@ -10,7 +10,7 @@ def make_pdf_with_text(text="Hello secret world"):
     return io.BytesIO(b)
 
 def make_pdf_with_image():
-    import pymupdf
+    import fitz as pymupdf
     from PIL import Image
     doc = pymupdf.open()
     page = doc.new_page(width=200, height=200)
@@ -30,7 +30,7 @@ def test_redact_texts(client):
     assert r.status_code == 200
     assert r.headers["content-type"] == "application/pdf"
     # verify text removed
-    import pymupdf
+    import fitz as pymupdf
     doc = pymupdf.open(stream=r.content, filetype="pdf")
     txt = doc[0].get_text()
     doc.close()

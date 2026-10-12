@@ -15,7 +15,7 @@
   "dashboard": {
     "title": "PDF Toolkit — 25 tools on your VPS",
     "subtitle": "All files stay on your server · Auto-delete in 5 min · BETA",
-    "footer": "Local · {count} tools · 50 MB — files deleted after 5 min",
+    "footer": "Local · {count} tools · No limits — files deleted after 5 min",
     "categories": {
       "all": { "label": "All", "title": "All tools", "subtitle": "25 tools — on your VPS" },
       "organize": { "label": "Organize PDF", "title": "Organize PDF", "subtitle": "Merge, split, rotate and arrange" },
@@ -25,7 +25,7 @@
       "security": { "label": "Security", "title": "Security", "subtitle": "Encrypt and decrypt" }
     },
     "tools": {
-      "merge": { "title": "Merge PDF", "desc": "Combine PDFs and reorder them easily in any order you like.", "meta": "→ 2–10 files" },
+      "merge": { "title": "Merge PDF", "desc": "Combine PDFs and reorder them easily in any order you like.", "meta": "→ no limits" },
       "split": { "title": "Split PDF", "desc": "Choose page ranges or extract every page as separate PDF.", "meta": "→ 1,3-5" },
       "delete": { "title": "Delete pages", "desc": "Remove unwanted pages — keep only what you need.", "meta": "→ 2, 4" },
       "rotate": { "title": "Rotate PDF", "desc": "Rotate multiple PDFs at once — 90°/180°/270°", "meta": "→ multi" },

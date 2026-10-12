@@ -1,137 +1,100 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
-from fastapi.responses import FileResponse
-import uuid
+import asyncio
+import io
 import os
 import shutil
 import time
-import io
+import uuid
 
-from PIL import Image
+import fitz
+from PIL import Image, ImageOps
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi.responses import FileResponse
 
 from ..config import TMP_ROOT, MAX_FILE_SIZE, MAX_FILES, RETENTION_SECONDS
 
 router = APIRouter()
-
-ALLOWED_IMAGE_TYPES = {
-    "image/jpeg",
-    "image/jpg",
-    "image/png",
-    "image/webp",
-    "image/bmp",
-    "image/tiff",
-    "image/gif",
-}
+PAGE_SIZES = {"a4": (595.276, 841.89), "a3": (841.89, 1190.551), "letter": (612, 792)}
+MARGINS = {"none": 0, "small": 14.173, "medium": 28.346, "large": 56.693}
 
 
 def schedule_delete(path: str):
-    """Delete temp dir after RETENTION_SECONDS (300s = 5 min). Non-blocking."""
     import threading
 
-    def _del():
+    def delete():
         time.sleep(RETENTION_SECONDS)
-        dir_path = os.path.dirname(path)
-        if os.path.exists(dir_path):
-            shutil.rmtree(dir_path, ignore_errors=True)
+        shutil.rmtree(os.path.dirname(path), ignore_errors=True)
 
-    threading.Thread(target=_del, daemon=True).start()
+    threading.Thread(target=delete, daemon=True).start()
 
 
+def build_image_pdf(images, out_path, orientation, page_size, margin):
+    padding = MARGINS[margin]
+    with fitz.open() as doc:
+        for data in images:
+            with Image.open(io.BytesIO(data)) as source:
+                if source.format not in {"JPEG", "PNG", "WEBP", "BMP", "TIFF", "GIF", "PPM"}:
+                    raise ValueError("Unsupported image format")
+                source.load()
+                image = ImageOps.exif_transpose(source).convert("RGBA")
+                # Composite alpha over white, including palette PNG and LA images.
+                background = Image.new("RGBA", image.size, "white")
+                background.alpha_composite(image)
+                rgb = background.convert("RGB")
+                width, height = rgb.size
+                if page_size == "fit":
+                    # Preserve the image aspect ratio; orientation is not meaningful
+                    # when the user explicitly chooses an image-sized page.
+                    page_width, page_height = width * 0.72 + 2 * padding, height * 0.72 + 2 * padding
+                else:
+                    page_width, page_height = PAGE_SIZES[page_size]
+                    if orientation == "landscape" or (orientation == "auto" and width > height):
+                        page_width, page_height = page_height, page_width
+                page = doc.new_page(width=page_width, height=page_height)
+                content = fitz.Rect(padding, padding, page_width - padding, page_height - padding)
+                image_bytes = io.BytesIO()
+                rgb.save(image_bytes, "PNG")
+                page.insert_image(content, stream=image_bytes.getvalue(), keep_proportion=True)
+                rgb.close()
+                background.close()
+                image.close()
+        doc.save(out_path, garbage=4, deflate=True)
+
+
+@router.post("/api/scan-to-pdf")
 @router.post("/api/jpg-to-pdf")
 async def jpg_to_pdf(
     background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(...),
+    orientation: str = Form(default="portrait"),
+    pageSize: str = Form(default="A4"),
+    margin: str = Form(default="medium"),
 ):
+    orientation, page_size, margin = orientation.lower(), pageSize.lower(), margin.lower()
+    if orientation not in {"portrait", "landscape", "auto"}:
+        raise HTTPException(400, "Invalid orientation")
+    if page_size not in {*PAGE_SIZES, "fit"}:
+        raise HTTPException(400, "Invalid pageSize: use A4, A3, Letter or fit")
+    if margin not in MARGINS:
+        raise HTTPException(400, "Invalid margin")
     if not files:
-        raise HTTPException(status_code=400, detail="No files")
+        raise HTTPException(400, "No files")
     if len(files) > MAX_FILES:
-        raise HTTPException(status_code=413, detail="Too many files")
-
-    uid = str(uuid.uuid4())
-    d = os.path.join(TMP_ROOT, uid)
-    os.makedirs(d, exist_ok=True)
-
-    out_path = os.path.join(d, "result.pdf")
-
-    pil_images: list[Image.Image] = []
-
+        raise HTTPException(413, "Too many files")
+    images = []
+    for file in files:
+        data = await file.read()
+        if not data:
+            raise HTTPException(400, "Empty file")
+        if len(data) > MAX_FILE_SIZE:
+            raise HTTPException(413, "File too large")
+        images.append(data)
+    directory = os.path.join(TMP_ROOT, str(uuid.uuid4()))
+    os.makedirs(directory, exist_ok=True)
+    out_path = os.path.join(directory, "result.pdf")
     try:
-        for f in files:
-            data = await f.read()
-            if len(data) > MAX_FILE_SIZE:
-                raise HTTPException(status_code=413, detail="File too large")
-            if len(data) == 0:
-                raise HTTPException(status_code=400, detail="Empty file")
-
-            # Optional mime check: allow any but rely on PIL; reject clearly non-image by PIL failure
-            # Also reject if content_type is explicitly non-image and PIL also fails - we handle via 400
-            try:
-                img = Image.open(io.BytesIO(data))
-                # Force load to detect truncated/corrupt
-                img.load()
-                # Verify it's an image by checking format
-                # Image.open may succeed for PDFs (which Pillow can also open as PDF) but we treat as invalid
-                # Only allow common raster formats
-                if img.format not in ("JPEG", "JPG", "PNG", "WEBP", "BMP", "TIFF", "GIF", "PPM", "WEBP"):
-                    # Pillow may return None for format if unknown; still try to process if load succeeded
-                    # but reject if it's PDF
-                    if img.format == "PDF":
-                        raise HTTPException(status_code=400, detail="Invalid image: PDF not allowed")
-                # Convert to RGB for PDF saving (PDF doesn't support RGBA/LA/P directly)
-                if img.mode == "RGBA":
-                    bg = Image.new("RGB", img.size, (255, 255, 255))
-                    bg.paste(img, mask=img.split()[3])
-                    img = bg
-                elif img.mode == "LA":
-                    # Convert LA to RGB
-                    bg = Image.new("RGB", img.size, (255, 255, 255))
-                    l, a = img.split()
-                    rgb = Image.merge("RGB", [l, l, l])
-                    bg.paste(rgb, mask=a)
-                    img = bg
-                elif img.mode == "P":
-                    # Palette -> convert via RGBA then flatten
-                    if "transparency" in img.info:
-                        img = img.convert("RGBA")
-                        bg = Image.new("RGB", img.size, (255, 255, 255))
-                        bg.paste(img, mask=img.split()[3])
-                        img = bg
-                    else:
-                        img = img.convert("RGB")
-                elif img.mode not in ("RGB", "L"):
-                    img = img.convert("RGB")
-                elif img.mode == "L":
-                    img = img.convert("RGB")
-                pil_images.append(img)
-            except HTTPException:
-                raise
-            except Exception as e:
-                raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
-
-        if not pil_images:
-            raise HTTPException(status_code=400, detail="No valid images")
-
-        # Save to PDF using Pillow save_all
-        first, rest = pil_images[0], pil_images[1:]
-        # Ensure output dir exists
-        # Pillow can save with save_all; first.save(out_path, "PDF", save_all=True, append_images=rest)
-        try:
-            if rest:
-                first.save(out_path, "PDF", resolution=100.0, save_all=True, append_images=rest)
-            else:
-                first.save(out_path, "PDF", resolution=100.0)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Failed to create PDF: {e}")
-
-    except HTTPException:
-        shutil.rmtree(d, ignore_errors=True)
-        raise
-    except Exception as e:
-        shutil.rmtree(d, ignore_errors=True)
-        raise HTTPException(status_code=400, detail=f"JPG to PDF failed: {e}")
-
-    if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
-        shutil.rmtree(d, ignore_errors=True)
-        raise HTTPException(status_code=500, detail="Failed to create PDF")
-
+        await asyncio.to_thread(build_image_pdf, images, out_path, orientation, page_size, margin)
+    except Exception as exc:
+        shutil.rmtree(directory, ignore_errors=True)
+        raise HTTPException(400, f"Invalid image or PDF settings: {exc}") from exc
     background_tasks.add_task(schedule_delete, out_path)
     return FileResponse(out_path, filename="images.pdf", media_type="application/pdf")

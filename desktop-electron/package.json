@@ -1,22 +1,53 @@
 {
   "name": "pdf-toolkit-desktop",
-  "version": "1.0.0-beta.1",
-  "description": "PDF Toolkit Desktop - 25 tools offline (BETA)",
+  "version": "1.1.0",
+  "description": "PDF Toolkit Desktop — PDF tools on your computer",
   "main": "main.js",
   "author": "LOX",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder --win --x64"
+    "prepare:runtime": "node prepare-runtime.js",
+    "build": "npm run prepare:runtime && electron-builder --win --x64",
+    "build:portable": "npm run prepare:runtime && electron-builder --win portable --x64"
   },
   "build": {
     "appId": "com.loxx.pdftoolkit",
-    "productName": "PDF Toolkit BETA",
-    "win": { "target": "nsis", "icon": "icon.ico" },
-    "nsis": { "oneClick": true, "perMachine": false },
+    "productName": "PDF Toolkit",
+    "electronDist": "node_modules/electron/dist",
+    "electronVersion": "40.10.2",
+    "directories": { "output": "dist" },
+    "files": ["main.js", "icon.ico", "package.json"],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "khusan-1-lox",
+        "repo": "pdf-toolkit"
+      }
+    ],
+    "win": {
+      "target": ["nsis", "portable"],
+      "icon": "icon.ico",
+      "signAndEditExecutable": false
+    },
+    "portable": {
+      "artifactName": "PDF-Toolkit-Portable-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "artifactName": "PDF-Toolkit-Setup-${version}-${arch}.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "shortcutName": "PDF Toolkit"
+    },
     "extraResources": [
-      { "from": "../backend", "to": "backend" },
-      { "from": "../frontend", "to": "frontend" }
+      { "from": "runtime/backend", "to": "backend" },
+      { "from": "runtime/frontend", "to": "frontend" },
+      { "from": "runtime/python", "to": "python" },
+      { "from": "runtime/desktop-runtime.json", "to": "desktop-runtime.json" }
     ]
   },
   "devDependencies": {

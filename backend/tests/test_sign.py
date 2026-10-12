@@ -2,7 +2,7 @@ import io
 from PIL import Image
 
 def make_pdf(pages=1):
-    import pymupdf
+    import fitz as pymupdf
     doc = pymupdf.open()
     for _ in range(pages):
         doc.new_page(width=595, height=842)

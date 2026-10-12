@@ -2,15 +2,7 @@ import createNextIntlPlugin from 'next-intl/plugin';
 const withNextIntl = createNextIntlPlugin('./i18n.ts');
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  async rewrites() {
-    const apiUrl = process.env.API_URL || "http://127.0.0.1:8000";
-    return [
-      {
-        source: "/api/:path*",
-        destination: apiUrl + "/api/:path*",
-      },
-    ];
-  },
+  output: "standalone",
   async headers() {
     return [
       {

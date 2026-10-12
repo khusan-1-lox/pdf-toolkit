@@ -159,6 +159,10 @@ async def watermark(
             raise HTTPException(status_code=400, detail="Encrypted PDF not supported")
         raise HTTPException(status_code=400, detail="Invalid PDF")
 
+    if doc.needs_pass:
+        doc.close()
+        raise HTTPException(400, "Encrypted PDF not supported")
+
     if len(doc) == 0:
         doc.close()
         raise HTTPException(status_code=400, detail="PDF has no pages")
@@ -180,6 +184,8 @@ async def watermark(
                 # multiply alpha channel by opacity
                 a = a.point(lambda p: int(p * opacity_f))
                 img = Image.merge("RGBA", (r, g, b, a))
+            if rotation_i % 360:
+                img = img.rotate(rotation_i, expand=True, resample=Image.Resampling.BICUBIC)
             buf = io.BytesIO()
             img.save(buf, format="PNG")
             image_png_bytes = buf.getvalue()
@@ -202,75 +208,35 @@ async def watermark(
             h = rect.height
             margin = 20
 
-            # Text watermark via page.new_shape + drawText
             if has_text:
-                t = text.strip()  # type: ignore
-                # Estimate text length for positioning
-                txt_len = get_text_length(t, fontsize_i, "helv")
-                txt_h = fontsize_i * 1.2
-
-                # Determine point based on position
-                if pos == "center":
-                    # center of page, offset by half text length
-                    x = w / 2 - txt_len / 2
-                    y = h / 2 + txt_h / 4
-                elif pos == "top-left":
-                    x = margin
-                    y = margin + txt_h
-                elif pos == "top-right":
-                    x = w - txt_len - margin
-                    y = margin + txt_h
-                elif pos == "bottom-left":
-                    x = margin
-                    y = h - margin
-                elif pos == "bottom-right":
-                    x = w - txt_len - margin
-                    y = h - margin
-                else:
-                    x = w / 2 - txt_len / 2
-                    y = h / 2 + txt_h / 4
-
-                # Use shape as spec requires: page.new_shape, drawText with font, color, alpha, rotate
-                shape = page.new_shape()
-                # insert_text supports color, rotate, stroke_opacity/fill_opacity
-                try:
-                    shape.insert_text(
-                        fitz.Point(x, y),
-                        t,
-                        fontsize=fontsize_i,
-                        fontname="helv",
-                        color=color_rgb,
-                        rotate=rotation_i,
-                        stroke_opacity=opacity_f,
-                        fill_opacity=opacity_f,
-                    )
-                    # finalize drawing with alpha
-                    shape.finish(color=color_rgb, fill=color_rgb, fill_opacity=opacity_f, stroke_opacity=opacity_f)
-                    shape.commit(overlay=True)
-                except Exception:
-                    # fallback to direct page insert if shape fails
-                    try:
-                        page.insert_text(
-                            fitz.Point(x, y),
-                            t,
-                            fontsize=fontsize_i,
-                            fontname="helv",
-                            color=color_rgb,
-                            rotate=rotation_i,
-                        )
-                    except Exception:
-                        pass
-                    try:
-                        shape.commit(overlay=True)
-                    except Exception:
-                        pass
-
-                # Alternative fallback ensure text is actually inserted even if shape.commit failed
-                # If page does not show shape, also try page.insert_text with overlay
-                # We do best-effort: try again via page.draw?
-                # For robustness, also try page.insert_text with fontsize if shape failed silently
-                # Check if shape was empty, try direct
-                # we already attempted
+                t = text.strip()
+                # MuPDF's bundled Unicode font works offline, including Cyrillic.
+                font = fitz.Font("cjk")
+                if any(not font.has_glyph(ord(char)) for char in t if not char.isspace()):
+                    raise HTTPException(400, "Watermark contains characters unsupported by the embedded font")
+                page.insert_font(fontname="watermark_unicode", fontbuffer=font.buffer)
+                matrix = fitz.Matrix(rotation_i)
+                # Text morphs use PDF's y-up coordinates; page rectangles use y-down.
+                bounds_matrix = fitz.Matrix(-rotation_i)
+                size = float(fontsize_i)
+                bounds = fitz.Rect(0, -font.ascender * size,
+                                   font.text_length(t, fontsize=size), -font.descender * size) * bounds_matrix
+                # Keep the whole rotated mark inside the selected page region.
+                factor = min(1.0, max(1, w - 2 * margin) / max(1, bounds.width),
+                             max(1, h - 2 * margin) / max(1, bounds.height))
+                size *= factor
+                bounds = fitz.Rect(0, -font.ascender * size,
+                                   font.text_length(t, fontsize=size), -font.descender * size) * bounds_matrix
+                left = (w - bounds.width) / 2 if pos == "center" else (
+                    margin if "left" in pos else w - margin - bounds.width)
+                top = (h - bounds.height) / 2 if pos == "center" else (
+                    margin if "top" in pos else h - margin - bounds.height)
+                origin = fitz.Point(left - bounds.x0, top - bounds.y0)
+                page.insert_text(
+                    origin, t, fontsize=size, fontname="watermark_unicode",
+                    color=color_rgb, morph=(origin, matrix),
+                    stroke_opacity=opacity_f, fill_opacity=opacity_f, overlay=True,
+                )
 
             # Image watermark via page.new_shape drawImage (spec) - we use page.insert_image with overlay and alpha pre-baked
             if has_image and image_png_bytes is not None:
@@ -306,17 +272,6 @@ async def watermark(
 
                 rect_img = fitz.Rect(x0, y0, x0 + nw, y0 + nh)
 
-                # Spec says use page.new_shape drawImage - we create shape to satisfy spec, but actual insertion via page.insert_image
-                # Create shape (as spec requires usage) then insert image via page API
-                _shape = page.new_shape()
-                # draw rect placeholder to demonstrate shape usage
-                try:
-                    _shape.draw_rect(rect_img)
-                    _shape.finish(fill_opacity=opacity_f, stroke_opacity=opacity_f)
-                    _shape.commit(overlay=True)
-                except Exception:
-                    pass
-
                 # actual image insertion with pre-baked opacity
                 try:
                     page.insert_image(rect_img, stream=image_png_bytes, overlay=True, keep_proportion=True)
@@ -328,7 +283,7 @@ async def watermark(
                     except Exception:
                         raise HTTPException(status_code=400, detail=f"Failed to insert image watermark: {e}")
 
-        # save with default options
+        doc.subset_fonts()
         doc.save(out_path, garbage=4, deflate=True, clean=True)
         doc.close()
     except HTTPException:

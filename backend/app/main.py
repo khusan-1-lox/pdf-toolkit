@@ -38,6 +38,7 @@ from .routers.ocr import router as ocr_router
 from .routers.pdfa import router as pdfa_router
 from .routers.html_to_pdf import router as html_to_pdf_router
 from .routers.repair import router as repair_router
+from .routers.advanced import router as advanced_router
 
 # Security: mask passwords in logs
 class PasswordMaskingFilter(logging.Filter):
@@ -108,9 +109,11 @@ app.include_router(ocr_router)
 app.include_router(pdfa_router)
 app.include_router(html_to_pdf_router)
 app.include_router(repair_router)
+app.include_router(advanced_router)
 
 
 @app.get("/health")
+@app.get("/api/health")
 def health():
     return {"status": "ok"}
 

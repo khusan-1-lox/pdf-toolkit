@@ -1,58 +1,34 @@
+export async function responseError(response: Response): Promise<Error> {
+  const text = await response.text();
+  try {
+    const data = JSON.parse(text);
+    const detail = data.detail || data.message;
+    return new Error(typeof detail === "string" ? detail : Array.isArray(detail) ? detail.map((item: {msg?: string}) => item.msg || "Invalid value").join("; ") : text);
+  } catch { return new Error(text || `Request failed (${response.status})`); }
+}
 export async function callTool(slug: string, files: File[], opts: Record<string, unknown> = {}): Promise<Blob> {
   const fd = new FormData();
-  let field: string;
-  if (slug === "merge" || slug === "jpg-to-pdf") field = "files";
-  else if (slug === "rotate") field = files.length > 1 ? "files" : "file";
-  else if (slug === "compare") {
-    // compare uses file1/file2 directly, but fallback if callTool invoked with 2 files
-    files.forEach((f, i) => fd.append(i === 0 ? "file1" : "file2", f));
-    // opts are not needed for compare, but still append if any
-    Object.entries(opts).forEach(([k, v]) => {
-      if (v === undefined || v === null) return;
-      if (v instanceof File) { fd.append(k, v); return; }
-      if (v instanceof Blob) { fd.append(k, v); return; }
-      const s = String(v);
-      if (s.trim() === "") return;
-      fd.append(k, s);
-    });
-    // cannot return blob for compare; caller should use callCompare
-    // but keep fetch blob fallback
-    const r = await fetch(`/api/${slug}`, { method: "POST", body: fd });
-    if (!r.ok) throw new Error(await r.text());
-    return r.blob();
-  } else field = "file";
-  files.forEach((f) => fd.append(field, f));
-  Object.entries(opts).forEach(([k, v]) => {
-    if (v === undefined || v === null) return;
-    // Handle File objects (e.g., watermark image, sign image)
-    if (v instanceof File) {
-      fd.append(k, v);
-      return;
-    }
-    if (v instanceof Blob) {
-      fd.append(k, v);
-      return;
-    }
-    const s = String(v);
-    if (s.trim() === "") return;
-    fd.append(k, s);
+  const field = ["merge", "organize-pdf", "jpg-to-pdf"].includes(slug) || (slug === "rotate" && files.length > 1) ? "files" : "file";
+  files.forEach((file) => fd.append(field, file));
+  Object.entries(opts).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") return;
+    fd.append(key, value instanceof Blob ? value : typeof value === "object" ? JSON.stringify(value) : String(value));
   });
-  // explicit order handling for merge (ensures JSON string passed as-is)
-  if (slug === "merge" && opts.order !== undefined && opts.order !== null) {
-    if (!fd.has("order") && String(opts.order).trim() !== "") {
-      fd.set("order", String(opts.order));
-    }
-  }
-  const r = await fetch(`/api/${slug}`, { method: "POST", body: fd });
-  if (!r.ok) throw new Error(await r.text());
-  return r.blob();
+  const response = await fetch(`/api/${slug}`, {method: "POST", body: fd});
+  if (!response.ok) throw await responseError(response);
+  return response.blob();
 }
-
-export async function callCompare(file1: File, file2: File): Promise<{ pages: { index: number; diff: boolean; left_thumb: string; right_thumb: string; left_text: string; right_text: string }[] }> {
-  const fd = new FormData();
-  fd.append("file1", file1);
-  fd.append("file2", file2);
-  const r = await fetch(`/api/compare`, { method: "POST", body: fd });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
+export type Comparison = {pages: {index: number; diff: boolean; left_thumb: string; right_thumb: string; left_text: string; right_text: string}[]};
+export async function callCompare(file1: File, file2: File): Promise<Comparison> {
+  const fd = new FormData(); fd.append("file1", file1); fd.append("file2", file2);
+  const response = await fetch("/api/compare", {method: "POST", body: fd});
+  if (!response.ok) throw await responseError(response);
+  return response.json();
+}
+export type PreviewPage = {page: number; thumb: string; width?: number; height?: number};
+export async function previewPdf(file: File, offset = 0, signal?: AbortSignal): Promise<{pages: PreviewPage[]; numPages: number}> {
+  const fd = new FormData(); fd.append("file", file); fd.append("offset", String(offset)); fd.append("limit", "50");
+  const response = await fetch("/api/preview", {method: "POST", body: fd, signal});
+  if (!response.ok) throw await responseError(response);
+  return response.json();
 }
